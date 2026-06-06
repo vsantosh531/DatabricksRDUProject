@@ -37,12 +37,12 @@ HEADERS = {
 SOURCES = [
     {
         "name": "zori_county",
-        "url":  "https://files.zillowstatic.com/research/public_csvs/zori/County_ZORI_AllHomesPlusMultifamily_Smoothed.csv",
+        "url":  "https://files.zillowstatic.com/research/public_csvs/zori/County_zori_uc_sfrcondomfr_sm_month.csv",
         "out":  f"{VOLUME_PATH}/zori_county.csv",
     },
     {
         "name": "zori_zip",
-        "url":  "https://files.zillowstatic.com/research/public_csvs/zori/Zip_ZORI_AllHomesPlusMultifamily_Smoothed.csv",
+        "url":  "https://files.zillowstatic.com/research/public_csvs/zori/Zip_zori_uc_sfrcondomfr_sm_month.csv",
         "out":  f"{VOLUME_PATH}/zori_zip.csv",
     },
 ]
