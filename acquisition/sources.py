@@ -236,6 +236,29 @@ SOURCES = [
     },
 
     # ------------------------------------------------------------------ #
+    # Zillow — Observed Rent Index (ZORI)                                 #
+    # No auth required; public research data from Zillow Research.        #
+    # County: smoothed, all homes + multifamily, monthly $/unit.          #
+    # ZIP:    same methodology at ZIP code level.                          #
+    # ------------------------------------------------------------------ #
+    {
+        "name": "zillow_zori_county",
+        "kind": "file",
+        "cadence": "monthly",
+        "url": "https://files.zillowstatic.com/research/public_csvs/zori/County_ZORI_AllHomesPlusMultifamily_Smoothed.csv",
+        "out": "zillow/zori_county.csv",
+        "enabled": True,
+    },
+    {
+        "name": "zillow_zori_zip",
+        "kind": "file",
+        "cadence": "monthly",
+        "url": "https://files.zillowstatic.com/research/public_csvs/zori/Zip_ZORI_AllHomesPlusMultifamily_Smoothed.csv",
+        "out": "zillow/zori_zip.csv",
+        "enabled": True,
+    },
+
+    # ------------------------------------------------------------------ #
     # Wake County — Qualified Sales                                       #
     # ------------------------------------------------------------------ #
     {

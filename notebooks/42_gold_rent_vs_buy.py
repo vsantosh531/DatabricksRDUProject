@@ -12,7 +12,8 @@
 # MAGIC - rent_burden_pct: rent / (monthly income) × 100  (>30% = cost-burdened)
 # MAGIC - rent_to_price_ratio: annualised rent / price (>5% historically favours buying)
 # MAGIC
-# MAGIC **Depends on:** gold.affordability_monthly (notebook 41)
+# MAGIC **Depends on:** gold.affordability_monthly (notebook 41),
+# MAGIC silver.rent_index_county (notebook 32 — Zillow ZORI)
 
 # COMMAND ----------
 
@@ -25,7 +26,7 @@ TARGET  = f"{GOLD}.rent_vs_buy"
 
 METRIC_COLS = [
     "median_sale_price", "est_monthly_payment", "mortgage_rate", "median_income",
-    "median_gross_rent", "rent_vs_buy_gap", "rent_burden_pct", "rent_to_price_ratio",
+    "zori", "rent_vs_buy_gap", "rent_burden_pct", "rent_to_price_ratio",
 ]
 
 # COMMAND ----------
@@ -39,16 +40,16 @@ SELECT
     a.est_monthly_payment,
     a.mortgage_rate,
     a.median_income,
-    r.median_gross_rent,
-    ROUND(a.est_monthly_payment - r.median_gross_rent, 2)        AS rent_vs_buy_gap,
+    r.zori,
+    ROUND(a.est_monthly_payment - r.zori, 2)                     AS rent_vs_buy_gap,
     CASE WHEN a.median_income > 0 THEN
-        ROUND(r.median_gross_rent / (a.median_income / 12.0) * 100, 1)
+        ROUND(r.zori / (a.median_income / 12.0) * 100, 1)
     END                                                           AS rent_burden_pct,
     CASE WHEN a.median_sale_price > 0 THEN
-        ROUND((r.median_gross_rent * 12.0) / a.median_sale_price, 4)
+        ROUND((r.zori * 12.0) / a.median_sale_price, 4)
     END                                                           AS rent_to_price_ratio
 FROM {GOLD}.affordability_monthly a
-LEFT JOIN {SILVER}.rentals r
+LEFT JOIN {SILVER}.rent_index_county r
        ON r.county_fips = a.county_fips
       AND r.date_key    = a.date_key
 WHERE a.is_current = true
@@ -70,7 +71,7 @@ try:
     existing_cols = [c.name for c in spark.table(TARGET).schema]
 except Exception:
     pass
-if "is_current" not in existing_cols:
+if "is_current" not in existing_cols or "zori" not in existing_cols:
     spark.sql(f"DROP TABLE IF EXISTS {TARGET}")
 
 spark.sql(f"""
@@ -81,7 +82,7 @@ CREATE TABLE IF NOT EXISTS {TARGET} (
     est_monthly_payment  DOUBLE,
     mortgage_rate        DOUBLE,
     median_income        DOUBLE,
-    median_gross_rent    DOUBLE,
+    zori                 DOUBLE,
     rent_vs_buy_gap      DOUBLE,
     rent_burden_pct      DOUBLE,
     rent_to_price_ratio  DOUBLE,
@@ -140,6 +141,6 @@ print(f"Total rows: {total:,}  |  Current: {current:,}  |  Historical: {total - 
 
 display(
     spark.table(TARGET)
-    .filter("is_current = true AND median_gross_rent IS NOT NULL")
+    .filter("is_current = true AND zori IS NOT NULL")
     .orderBy("county_fips", "date_key")
     .limit(20))
