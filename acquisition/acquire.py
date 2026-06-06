@@ -35,10 +35,13 @@ STAGING = Path(__file__).parent / "staging"
 USER_AGENT = "rdu-lakehouse-acquisition/1.0 (portfolio project)"
 
 
-def _http_get(url, params=None, binary=False, timeout=120):
+def _http_get(url, params=None, binary=False, timeout=120, extra_headers=None):
     if params:
         url = url + "?" + urllib.parse.urlencode(params)
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    headers = {"User-Agent": USER_AGENT}
+    if extra_headers:
+        headers.update(extra_headers)
+    req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = resp.read()
     return data if binary else data.decode("utf-8")
@@ -70,7 +73,7 @@ def fetch_api(src):
 
 
 def fetch_file(src):
-    body = _http_get(src["url"], binary=True)
+    body = _http_get(src["url"], binary=True, extra_headers=src.get("headers"))
     if src.get("convert_xlsx_to_csv"):
         body = _xlsx_bytes_to_csv_bytes(
             body,
@@ -202,7 +205,7 @@ def main():
         try:
             DISPATCH[src["kind"]](src)
         except Exception as e:                       # noqa: BLE001
-            print(f"  FAILED: {e}")
+            print(f"  FAILED: {type(e).__name__}: {e}")
             failures.append(src["name"])
     if failures:
         print(f"\nCompleted with failures: {failures}")
