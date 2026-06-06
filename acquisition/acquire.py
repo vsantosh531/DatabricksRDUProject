@@ -28,23 +28,59 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import requests as _requests
+
 sys.path.insert(0, os.path.dirname(__file__))
 from sources import SOURCES  # noqa: E402
 
 STAGING = Path(__file__).parent / "staging"
-USER_AGENT = "rdu-lakehouse-acquisition/1.0 (portfolio project)"
+
+# Used for API endpoints (FRED, Census, BLS, ArcGIS) — identifies the bot.
+API_USER_AGENT = "rdu-lakehouse-acquisition/1.0 (portfolio project)"
+
+# Used for file downloads — looks like a real browser to avoid CDN blocks.
+BROWSER_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
 
 
 def _http_get(url, params=None, binary=False, timeout=120, extra_headers=None):
+    """API-style GET using urllib (no session state needed)."""
     if params:
         url = url + "?" + urllib.parse.urlencode(params)
-    headers = {"User-Agent": USER_AGENT}
+    headers = {"User-Agent": API_USER_AGENT}
     if extra_headers:
         headers.update(extra_headers)
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         data = resp.read()
     return data if binary else data.decode("utf-8")
+
+
+def _http_get_file(url, timeout=180, extra_headers=None):
+    """File download using requests — handles redirects, compression, SSL
+    better than urllib. Returns raw bytes. Retries up to 3 times."""
+    headers = {
+        "User-Agent": BROWSER_USER_AGENT,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+    }
+    if extra_headers:
+        headers.update(extra_headers)
+    for attempt in range(3):
+        try:
+            r = _requests.get(url, headers=headers, timeout=timeout, stream=True)
+            r.raise_for_status()
+            return r.content
+        except Exception as e:
+            if attempt == 2:
+                raise
+            wait = 2 ** attempt
+            print(f"    attempt {attempt + 1} failed ({type(e).__name__}: {e}) — retrying in {wait}s")
+            time.sleep(wait)
 
 
 def _write(rel_path, content, binary=False):
@@ -73,7 +109,7 @@ def fetch_api(src):
 
 
 def fetch_file(src):
-    body = _http_get(src["url"], binary=True, extra_headers=src.get("headers"))
+    body = _http_get_file(src["url"], extra_headers=src.get("headers"))
     if src.get("convert_xlsx_to_csv"):
         body = _xlsx_bytes_to_csv_bytes(
             body,
@@ -86,7 +122,7 @@ def fetch_file(src):
 def fetch_file_gz(src):
     # Keep the gzip compressed — Spark/Auto Loader reads .gz natively, and it
     # keeps the volume small (matters for Free Edition).
-    body = _http_get(src["url"], binary=True)
+    body = _http_get_file(src["url"], extra_headers=src.get("headers"))
     _write(src["out"], body, binary=True)
 
 
