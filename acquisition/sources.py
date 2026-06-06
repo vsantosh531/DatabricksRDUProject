@@ -249,6 +249,7 @@ SOURCES = [
         "headers": {"Referer": "https://www.zillow.com/research/data/"},
         "out": "zillow/zori_county.csv",
         "enabled": True,
+        "required": False,   # Zillow CDN blocks GitHub Actions IPs via CloudFlare
     },
     {
         "name": "zillow_zori_zip",
@@ -258,6 +259,7 @@ SOURCES = [
         "headers": {"Referer": "https://www.zillow.com/research/data/"},
         "out": "zillow/zori_zip.csv",
         "enabled": True,
+        "required": False,   # Zillow CDN blocks GitHub Actions IPs via CloudFlare
     },
 
     # ------------------------------------------------------------------ #

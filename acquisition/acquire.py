@@ -205,19 +205,18 @@ def fetch_bps_monthly(src):
 def fetch_bls_laus(src):
     """Fetch BLS LAUS unemployment rate for multiple county series via v1 API.
     v1 requires no key (25 calls/day limit; one POST covers all 8 counties)."""
-    import json as _json
-    payload = _json.dumps({"seriesid": src["series_ids"]}).encode("utf-8")
-    req = urllib.request.Request(
+    payload = json.dumps({"seriesid": src["series_ids"]})
+    r = _requests.post(
         "https://api.bls.gov/publicAPI/v1/timeseries/data/",
         data=payload,
-        headers={"User-Agent": USER_AGENT, "Content-Type": "application/json"},
+        headers={"User-Agent": API_USER_AGENT, "Content-Type": "application/json"},
+        timeout=60,
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        body = resp.read().decode("utf-8")
-    data = _json.loads(body)
+    r.raise_for_status()
+    data = r.json()
     if data.get("status") != "REQUEST_SUCCEEDED":
-        raise RuntimeError(f"BLS API error: {data.get('message', body[:200])}")
-    _write(src["out"], body)
+        raise RuntimeError(f"BLS API error: {data.get('message', str(data)[:200])}")
+    _write(src["out"], r.text)
 
 
 DISPATCH = {
@@ -232,21 +231,28 @@ DISPATCH = {
 
 def main():
     STAGING.mkdir(exist_ok=True)
-    failures = []
+    required_failures  = []
+    optional_failures  = []
     for src in SOURCES:
         if not src.get("enabled", True):
             print(f"- {src['name']}: skipped (disabled)")
             continue
+        required = src.get("required", True)
         print(f"- {src['name']}: fetching ({src['kind']})")
         try:
             DISPATCH[src["kind"]](src)
         except Exception as e:                       # noqa: BLE001
             print(f"  FAILED: {type(e).__name__}: {e}")
-            failures.append(src["name"])
-    if failures:
-        print(f"\nCompleted with failures: {failures}")
+            if required:
+                required_failures.append(src["name"])
+            else:
+                optional_failures.append(src["name"])
+    if optional_failures:
+        print(f"\nOptional sources unavailable (non-fatal): {optional_failures}")
+    if required_failures:
+        print(f"\nRequired sources FAILED: {required_failures}")
         sys.exit(1)
-    print("\nAll enabled sources acquired into ./staging")
+    print("\nAll required sources acquired into ./staging")
 
 
 if __name__ == "__main__":
