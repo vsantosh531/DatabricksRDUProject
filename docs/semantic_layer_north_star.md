@@ -53,6 +53,15 @@ organization is already paying without it:
   regression testing on every metric-view change catches silent drift in
   CI — the alternative is an executive making a call off a dashboard number
   that quietly stopped matching the source system.
+- **Reuse compounds — the platform is a one-time cost, not a recurring one.**
+  Building the shared template, CI/CD pipeline, and access model costs
+  roughly 4–5 sprints, once (see the Jira backlog's E0–E3 estimates). Every
+  domain after the first onboards in roughly a sprint through the exact
+  same pipeline, unchanged — and observability, cost attribution, and
+  governance review need **zero additional setup per domain**, since
+  they're built against the shared metastore, not rebuilt per team. The
+  fifth domain onboarded isn't proportionally more expensive than the
+  second, which is the actual test of "platform" versus "one-off project."
 
 ---
 
