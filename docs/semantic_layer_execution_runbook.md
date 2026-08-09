@@ -57,6 +57,9 @@ Setting up fresh on a different machine instead:
 - Phase 5 has no CLI commands by design — it's done in the Databricks UI.
 - Replace the literal warehouse ID (`95643b36f69a05e2`) with your own from
   the Phase 0 `warehouses list` output if it differs.
+- Catalogs are named `rdu_dev` and `rdu_prod` throughout — project-specific
+  names rather than generic `dev`/`prod`, matching this project's existing
+  `bronze`/`silver`/`gold` naming under the `workspace` catalog.
 
 ---
 
@@ -101,17 +104,17 @@ before moving on.
 
 ```bash
 # Create the two environment catalogs
-databricks catalogs create dev  -p DEFAULT
-databricks catalogs create prod -p DEFAULT
+databricks catalogs create rdu_dev  -p DEFAULT
+databricks catalogs create rdu_prod -p DEFAULT
 
 # Create the semantic schema inside each — this is where metric views live
-databricks schemas create semantic dev  -p DEFAULT
-databricks schemas create semantic prod -p DEFAULT
+databricks schemas create semantic rdu_dev  -p DEFAULT
+databricks schemas create semantic rdu_prod -p DEFAULT
 
 # Verify both exist
 databricks catalogs list -p DEFAULT
-databricks schemas list dev  -p DEFAULT
-databricks schemas list prod -p DEFAULT
+databricks schemas list rdu_dev  -p DEFAULT
+databricks schemas list rdu_prod -p DEFAULT
 ```
 
 > **`catalogs create` fails on this tier — do it in the UI instead.** Two
@@ -123,14 +126,22 @@ databricks schemas list prod -p DEFAULT
 > — there's no CLI override. Create both catalogs there instead:
 > 1. Open the workspace in a browser → **Catalog** (left sidebar) →
 >    **Create Catalog**.
-> 2. Name it `dev`, leave Default Storage selected, click **Create**.
-> 3. Repeat for `prod`.
+> 2. Name it `rdu_dev`, leave Default Storage selected, click **Create**.
+> 3. Repeat for `rdu_prod`.
+>
+> Already created them as `dev`/`prod`? Rename in place instead of
+> recreating:
+> ```bash
+> databricks catalogs update dev  --new-name rdu_dev  -p DEFAULT
+> databricks catalogs update prod --new-name rdu_prod -p DEFAULT
+> ```
 >
 > Once both exist, switch back to the CLI for everything else in this
 > runbook — schemas, grants, and metric view deploys all work fine from the
 > terminal; it's only catalog creation itself that's UI-only here.
 
-**Checkpoint:** `dev.semantic` and `prod.semantic` both exist and are empty.
+**Checkpoint:** `rdu_dev.semantic` and `rdu_prod.semantic` both exist and
+are empty.
 
 ---
 
@@ -144,7 +155,7 @@ databricks warehouses start <YOUR_WAREHOUSE_ID> -p DEFAULT
 Write the metric view to a local file named `dev_metric.sql`:
 
 ```sql
-CREATE OR REPLACE VIEW dev.semantic.zip_hotspots_metrics
+CREATE OR REPLACE VIEW rdu_dev.semantic.zip_hotspots_metrics
 WITH METRICS
 LANGUAGE YAML
 AS $$
@@ -183,15 +194,15 @@ databricks experimental aitools tools statement get <STATEMENT_ID> -p DEFAULT
 
 # Query it to prove MEASURE() works — the whole point of a metric view
 databricks experimental aitools tools query --warehouse <YOUR_WAREHOUSE_ID> -p DEFAULT \
-  "SELECT zip_name, MEASURE(avg_days_on_market) AS avg_dom, MEASURE(total_active_listings) AS active FROM dev.semantic.zip_hotspots_metrics GROUP BY ALL ORDER BY active DESC LIMIT 10"
+  "SELECT zip_name, MEASURE(avg_days_on_market) AS avg_dom, MEASURE(total_active_listings) AS active FROM rdu_dev.semantic.zip_hotspots_metrics GROUP BY ALL ORDER BY active DESC LIMIT 10"
 ```
 
 Once the query returns correct results, repeat the same `CREATE OR REPLACE`
-against `prod.semantic.zip_hotspots_metrics` (swap `dev` for `prod` in the
-SQL file, submit again).
+against `rdu_prod.semantic.zip_hotspots_metrics` (swap `rdu_dev` for
+`rdu_prod` in the SQL file, submit again).
 
-**Checkpoint:** `MEASURE()` queries against both `dev.semantic` and
-`prod.semantic` return correct, matching numbers.
+**Checkpoint:** `MEASURE()` queries against both `rdu_dev.semantic` and
+`rdu_prod.semantic` return correct, matching numbers.
 
 ---
 
@@ -224,15 +235,15 @@ personal `DATABRICKS_TOKEN`.
 databricks groups create --display-name semantic-consumers -p DEFAULT
 
 # Grant it access to the catalog and schema (hierarchy: catalog -> schema -> view)
-databricks grants update catalog prod --json '{
+databricks grants update catalog rdu_prod --json '{
   "changes": [{"principal": "semantic-consumers", "add": ["USE_CATALOG"]}]
 }' -p DEFAULT
 
-databricks grants update schema prod.semantic --json '{
+databricks grants update schema rdu_prod.semantic --json '{
   "changes": [{"principal": "semantic-consumers", "add": ["USE_SCHEMA"]}]
 }' -p DEFAULT
 
-databricks grants update table prod.semantic.zip_hotspots_metrics --json '{
+databricks grants update table rdu_prod.semantic.zip_hotspots_metrics --json '{
   "changes": [{"principal": "semantic-consumers", "add": ["SELECT"]}]
 }' -p DEFAULT
 
@@ -251,7 +262,7 @@ access at all to the source gold table.
 No CLI commands — this is done in the Databricks UI:
 
 1. Go to **New → Genie Space**.
-2. Attach `prod.semantic.zip_hotspots_metrics` as the data source.
+2. Attach `rdu_prod.semantic.zip_hotspots_metrics` as the data source.
 3. Add 3–5 curated sample questions (e.g. "which ZIP has the highest active
    listings this quarter?").
 4. Test each question and confirm the answer matches a manual query.
