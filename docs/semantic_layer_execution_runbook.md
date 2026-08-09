@@ -114,6 +114,20 @@ databricks schemas list dev  -p DEFAULT
 databricks schemas list prod -p DEFAULT
 ```
 
+> **If `catalogs create` errors with "Metastore storage root URL does not
+> exist"**: your metastore doesn't have a default storage root wired up for
+> the CLI (the Databricks UI's "Default Storage" option handles this
+> silently; the CLI needs it explicit). Find your account's managed storage
+> location by inspecting an existing catalog —
+> `databricks catalogs get workspace -p DEFAULT` — and reuse its
+> `storage_root` value explicitly:
+> ```bash
+> databricks catalogs create dev  --storage-root "<storage_root from above>" -p DEFAULT
+> databricks catalogs create prod --storage-root "<storage_root from above>" -p DEFAULT
+> ```
+> Unity Catalog nests each catalog's actual data under its own subpath
+> automatically, so it's safe to reuse the same root string for both.
+
 **Checkpoint:** `dev.semantic` and `prod.semantic` both exist and are empty.
 
 ---
