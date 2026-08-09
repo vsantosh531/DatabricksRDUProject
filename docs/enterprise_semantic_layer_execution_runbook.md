@@ -57,6 +57,12 @@ detour — don't assume that limitation carries over here.
 - GitHub repo admin access (Settings → Environments, Settings → Secrets).
 - Databricks CLI installed, with profiles `dev` and `prod` configured in
   `~/.databrickscfg` pointing at each workspace.
+- **Okta SCIM provisioning — external dependency, owned by the Okta team,
+  not this workstream.** Group-based access is Okta-sourced, not manually
+  created. File this dependency on day 1 — see Phase E1 for exactly what
+  to request. Cross-team IdP turnaround is historically the slowest part of
+  a rollout like this, not the Databricks-side engineering, so it shouldn't
+  be the thing discovered late.
 
 ## Repo layout (monorepo)
 
@@ -142,6 +148,39 @@ tools deliberately — the catalog/schema/grants live in the bundle (DAB
 resources are confirmed to support them), the workspace binding doesn't
 (confirmed absent from the bundle schema), so it's the one piece Terraform
 still owns.
+
+**Dependency — Okta SCIM provisioning (owned by the Okta team, not this
+workstream).** The `semantic-consumers` group referenced in the grants
+below doesn't exist until Okta provisions and syncs it. File this request
+immediately, in parallel with everything else in this phase — don't let it
+become the thing discovered late when it's actually blocking.
+
+*What to request from the Okta team:*
+- The Databricks SCIM integration confirmed configured against this
+  account (skip if already in place for other projects here).
+- Okta groups created and populated: `semantic-consumers` now, plus
+  per-domain groups (e.g. `finance-analysts`) ahead of Phase E6.
+- Explicit confirmation that group **removals** propagate, not just
+  additions — deprovisioning is the half of SCIM that actually matters for
+  security, worth asking about directly rather than assuming it works
+  because additions do.
+
+*What "done" looks like, once delivered:*
+- `semantic-consumers` appears in Databricks (account console → Users &
+  groups, or `databricks account groups list`) with expected membership.
+- The group name in the DAB grants YAML below matches what actually synced,
+  character for character — naming can drift between what was requested
+  and what landed.
+
+*Test, once the dependency is delivered — don't skip either half:*
+- Ask the Okta team to add a test user to `semantic-consumers`; confirm it
+  reflects in Databricks within their stated SLA.
+- Ask them to remove that user; confirm access is actually revoked. A
+  working add-path with a broken remove-path is a real security gap, not
+  just an inconvenience.
+- **Never** create or modify this group via Terraform, the bundle, or the
+  console — Okta/SCIM owns it exclusively. Anything else reintroduces the
+  same dual-ownership drift risk already flagged for catalogs above.
 
 **Implement — catalog, schema, grants** (`resources/catalogs_schemas.yml`,
 deployed via the bundle in Phase E2, not standalone):
@@ -466,6 +505,8 @@ domain — the actual test of "platform," not "one-off project."
 ## Closing checklist
 
 Before calling this "done" for the two-domain milestone:
+- [ ] Okta SCIM dependency requested on day 1, not discovered as a blocker
+      mid-phase — delivered, and both the add and remove test passed
 - [ ] E0–E3 critical path complete, second domain (E6) live in prod
 - [ ] E1's isolation test (catalog invisible from the wrong workspace)
       passed, not skipped
