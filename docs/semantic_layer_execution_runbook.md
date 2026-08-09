@@ -20,6 +20,27 @@ previous one created, so don't skip ahead.
   privilege on the metastore.
 - A SQL warehouse exists in the workspace (`databricks warehouses list`).
 
+## Where to run these commands
+
+Run every command in this runbook from a **terminal on your own computer**
+— not inside a Databricks notebook, not the Databricks web UI, and not
+GitHub Actions. Any terminal app works (Terminal.app or iTerm on macOS,
+Windows Terminal/WSL on Windows). You don't need to `cd` into this repo
+first — none of Phase 0's commands touch local files (Phase 2 is the first
+one that writes a local `.sql` file, and even then it can live anywhere).
+
+On this project's machine, the CLI is already installed and authenticated —
+confirmed via `databricks --version` and `databricks auth profiles`, with a
+valid `DEFAULT` profile pointing at the workspace. If that's your machine
+too, open a terminal and start pasting Phase 0 commands right away.
+
+Setting up fresh on a different machine instead:
+1. Install the CLI: `curl -fsSL https://raw.githubusercontent.com/databricks/setup-cli/main/install.sh | sh` (or `brew install databricks` on macOS).
+2. Authenticate: `databricks auth login --host <your-workspace-url>` — opens
+   a browser to log in and writes a profile into `~/.databrickscfg`.
+3. Confirm it worked: `databricks auth profiles` should show your profile
+   with `Valid: YES`.
+
 ## How to run these instructions
 
 - Run commands **top to bottom, one at a time** — later phases reference
