@@ -317,6 +317,11 @@ looking at the number — not only to the pipeline's own internal monitoring.
 
 ## Sequenced rollout (from single-workspace to enterprise multi-workspace)
 
+> **Superseded by §14 below for new implementations.** Kept here for the
+> reasoning on why identity/access sequencing matters — §14 is the ordering
+> to actually follow, built around a walking-skeleton demo that this
+> version doesn't include.
+
 1. **Metastore & workspace provisioning** — confirm/create the regional
    metastore; provision dev/staging/prod workspaces (function split only if
    justified); set up catalog-to-workspace bindings.
@@ -400,3 +405,112 @@ date — roll the scoped grants out **in parallel** with the broad credential,
 verify coverage against the observability data, and only then retire it.
 That verification step is what makes deferring access safe rather than just
 convenient.
+
+---
+
+## 14. Current recommended rollout: walking-skeleton, demo-first
+
+**This is the ordering to actually follow** for new implementations —
+supersedes the default "Sequenced rollout" and §13 above, both kept for the
+reasoning behind sequencing identity/access differently. This section
+matches the Epic 0–9 structure in `docs/semantic_layer_jira_backlog.md`,
+which is the authoritative, story-level breakdown of everything below — if
+the two ever disagree, the backlog wins.
+
+Rationale: prove the concept end to end in days before committing sprints
+to breadth (multi-workspace topology, full CI/CD gating, governance). See
+`docs/semantic_layer_north_star.md` for the "why demo first" framing.
+
+**Critical path** (sequential — each blocks the next):
+
+| Epic | Sprint(s) | What it delivers |
+|---|---|---|
+| E0 — Walking skeleton | 0.5 (3–5 days) | One metric view, deployed, queried, shown in one consumption surface — the leadership proof point |
+| E1 — Topology hardening | 1 | Real dev/staging/prod workspaces, catalog-to-workspace bindings |
+| E2 — Platform enablement | 1.5 | Terraform modules, the reusable bundle template, compute strategy |
+| E3 — CI/CD pipeline | 1.5 | Validate/staging/prod promotion with approval gates |
+| E6 — Second domain onboarding | 1 | Proves the template/pipeline generalize beyond the pilot |
+
+**Parallel tracks** (don't block the critical path, but must land before
+scaling past two domains):
+
+| Epic | Sprint(s) | Notes |
+|---|---|---|
+| E4 — Observability | 1 | Can start as soon as E1 lands |
+| E5 — Governance | 0.5 | Needs E3's prod pipeline to review against |
+| E9 — Network & security | 0.5–1 | Verify overlap with existing access provisioning first |
+| E7 — Disaster recovery | 0.5 | Lower priority; needs E2's IaC template |
+| E8 — Lifecycle & maintenance | 1.5 (ongoing) | Starts once E3 exists; never really "done" |
+
+**Critical path total: ~5.5 sprints (≈11 weeks) to a second domain live in
+prod** with core lifecycle practices in place — faster than treating every
+epic as strictly sequential, because the walking skeleton removes early
+uncertainty cheaply and Epics 4/5/7/9 run in parallel instead of adding to
+the sequential path.
+
+Team/assumption basis: ~3–4 dedicated platform engineers, 2-week sprints.
+The two schedule risks that matter most are still external, not
+engineering — IdP/SCIM turnaround (if pursuing real identity federation)
+and network/security review — track both from sprint 1.
+
+---
+
+## 15. Enterprise readiness — additional considerations
+
+Sections 1–14 cover the platform's technical build. A handful of things
+matter for genuine enterprise-scale operation that don't fit neatly into
+"infrastructure" but will surface as real gaps if skipped.
+
+**External BI tool integration (beyond Databricks-native consumption)**
+This design's "universal" claim has a real limit: Power BI, Tableau, and
+similar tools reach a metric view only through SQL — they cannot import it
+as a native semantic model the way they'd import a Power BI dataset or a
+dbt semantic layer. Two honest options: (a) build thin SQL views per
+external tool that call `MEASURE()` on the metric view, keeping one
+governed source of truth but accepting a translation layer per tool, or
+(b) accept that external-BI consumers see the same numbers but not the same
+governed object, and rely on parity testing (§12) to keep them honest
+instead of architectural enforcement. Decide and document which, per tool,
+rather than leaving it implicit — see `docs/bi_serving_layer.md` for this
+project's own two-surface precedent.
+
+**Multi-region considerations**
+§1 says one metastore per region — for an org operating across regions
+(data-residency/GDPR-driven, not just latency-driven), that means the
+*same* metric definition has to be authored and kept in sync across
+metastores that cannot share objects directly. Treat cross-region metric
+parity as its own lifecycle concern (§12): the same YAML deployed to each
+region's metastore via the same CI pipeline, not independently authored
+per region.
+
+**Compliance & audit evidence**
+Row filters and column masks (§5) satisfy access control; they don't by
+themselves satisfy an audit. Define a retention policy for
+`system.access.audit` and `system.query.history` (how long, where
+archived), and map which controls in this doc satisfy which compliance
+framework requirements (SOC 2, GDPR, HIPAA, or industry-specific) your org
+is actually subject to — this doc gives you the controls, not the mapping,
+because that mapping is organization-specific.
+
+**Training & enablement, distinct from onboarding**
+§10's onboarding runbook is a technical checklist for a domain *team*.
+Enterprise adoption also needs a human enablement track: workshops or
+office hours for business users learning to trust Genie over their
+existing spreadsheets, and a documentation portal separate from this
+engineering repo. Technical onboarding without adoption enablement
+produces a platform nobody outside the pilot domain actually uses.
+
+**Incident response & support model**
+Nothing here defines what happens when a certified metric view returns
+wrong numbers in prod, or Genie gives a confidently wrong answer, at 9am on
+a Monday. Define severity tiers, an on-call rotation for the platform team,
+and a specific incident playbook for "a certified metric is wrong" —
+distinct from general data-pipeline incident response, because the blast
+radius (every dashboard/Genie space built on that metric) is different.
+
+**FinOps cadence, not just cost dashboards**
+§8's cost dashboard and §9's budgets tell you what's being spent; they
+don't establish a recurring practice. Add a monthly or quarterly cost
+review — owned by the platform team, using the dashboard from §8 and the
+usage-vs-materialization cross-check from §7 — that actually acts on what
+the dashboard shows, rather than a dashboard nobody revisits after launch.

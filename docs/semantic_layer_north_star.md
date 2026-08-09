@@ -133,11 +133,12 @@ process (a lightweight version is enough until a third domain joins).
 
 ## Roadmap at a glance
 
-Discovery & alignment → Foundation (metastore/workspace/network) → Identity
-→ Platform enablement (template + CI/CD) → Pilot domain go-live → Governance
-stand-up → Hardening (lifecycle processes). Real sequencing, sprint
-estimates, and the access-last alternative live in
-`docs/enterprise_semantic_layer_infra.md`.
+A fast walking-skeleton demo (days, not sprints) → Topology hardening →
+Platform enablement (template + CI/CD) → Second domain onboarded, in
+parallel with observability and governance stand-up → Hardening (lifecycle
+processes). Real sequencing, sprint estimates, and the access-last
+alternative live in `docs/enterprise_semantic_layer_infra.md` §14; the
+story-level backlog is in `docs/semantic_layer_jira_backlog.md`.
 
 ---
 
