@@ -114,19 +114,21 @@ databricks schemas list dev  -p DEFAULT
 databricks schemas list prod -p DEFAULT
 ```
 
-> **If `catalogs create` errors with "Metastore storage root URL does not
-> exist"**: your metastore doesn't have a default storage root wired up for
-> the CLI (the Databricks UI's "Default Storage" option handles this
-> silently; the CLI needs it explicit). Find your account's managed storage
-> location by inspecting an existing catalog —
-> `databricks catalogs get workspace -p DEFAULT` — and reuse its
-> `storage_root` value explicitly:
-> ```bash
-> databricks catalogs create dev  --storage-root "<storage_root from above>" -p DEFAULT
-> databricks catalogs create prod --storage-root "<storage_root from above>" -p DEFAULT
-> ```
-> Unity Catalog nests each catalog's actual data under its own subpath
-> automatically, so it's safe to reuse the same root string for both.
+> **`catalogs create` fails on this tier — do it in the UI instead.** Two
+> CLI errors show up in sequence: first "Metastore storage root URL does not
+> exist," and even passing `--storage-root` explicitly (reusing the value
+> from `databricks catalogs get workspace -p DEFAULT`) hits a second wall:
+> "Please use the UI to create a catalog with Default Storage." This
+> metastore requires Default Storage catalogs to be created through the UI
+> — there's no CLI override. Create both catalogs there instead:
+> 1. Open the workspace in a browser → **Catalog** (left sidebar) →
+>    **Create Catalog**.
+> 2. Name it `dev`, leave Default Storage selected, click **Create**.
+> 3. Repeat for `prod`.
+>
+> Once both exist, switch back to the CLI for everything else in this
+> runbook — schemas, grants, and metric view deploys all work fine from the
+> terminal; it's only catalog creation itself that's UI-only here.
 
 **Checkpoint:** `dev.semantic` and `prod.semantic` both exist and are empty.
 
