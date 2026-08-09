@@ -15,14 +15,23 @@ implement — Epic codes below match it exactly).
 ## Verification status — read this first
 
 Unlike the Free Edition runbook, **none of this was run against a live
-environment** — this session only has access to a single Free Edition
-workspace, and multi-workspace mechanics (catalog-to-workspace binding,
-OIDC federation, a second workspace, cloud IAM) can't be exercised here.
-Everything below uses documented, standard Terraform/Databricks/GitHub
-Actions patterns, but a few specifics need confirming against current docs
+multi-workspace environment** — this session only has access to a single
+Free Edition workspace, so things like OIDC federation, a second workspace,
+and cloud IAM can't be exercised here. Everything below uses documented,
+standard patterns, but a few specifics need confirming against current docs
 before you run them for real — each is flagged inline with **[verify]**.
-Don't treat those as settled; treat everything else as a solid starting
-point.
+
+One thing *is* confirmed, not guessed: which parts of this can run through
+Databricks Asset Bundles versus Terraform. I inspected the installed CLI's
+bundle resource schema directly (`databricks bundle schema`) rather than
+assume — DABs natively support `catalogs`, `schemas`, and `grants` as bundle
+resources (confirmed fields on `Catalog`: `name`, `comment`, `storage_root`,
+`grants`; on `Schema`: `catalog_name`, `name`, `comment`, `grants`). That
+means catalog/schema/grant provisioning moves into `databricks.yml` below,
+not Terraform. **Catalog-to-workspace binding has no field on the `Catalog`
+resource** — confirmed absent, not just undocumented — so that stays
+Terraform/CLI-only, along with service principals and groups (neither is a
+DAB resource type at all).
 
 One correction to carry over from the Free Edition runbook: the "catalog
 creation fails, use the UI" issue documented there was specific to that
@@ -54,22 +63,28 @@ detour — don't assume that limitation carries over here.
 ```
 repo/
 ├── databricks.yml                    # DAB: dev + prod targets
+├── resources/
+│   ├── catalogs_schemas.yml          # catalog + schema + grants (DAB)
+│   └── semantic_deploy_job.yml       # job task deploying semantic/*.yaml
 ├── semantic/
 │   ├── housing/*.yaml                # pilot domain's metric views
 │   └── finance/*.yaml                # second domain (Phase E6)
-├── resources/
-│   └── semantic_deploy_job.yml       # job task deploying semantic/*.yaml
 ├── terraform/
 │   ├── providers.tf
-│   ├── catalogs.tf                   # catalog + workspace binding + schemas
-│   ├── grants.tf
-│   └── service_principals.tf
+│   ├── workspace_bindings.tf         # catalog-to-workspace binding only
+│   └── service_principals.tf         # SPs + groups — not DAB resources
 ├── tests/
 │   └── test_metric_parity.py         # parity tests, wired into CI
 └── .github/workflows/
     ├── semantic-layer-ci.yml         # validate -> dev -> prod
     └── verify-sp.yml
 ```
+
+Terraform's footprint is intentionally small now — just the two things DABs
+can't do. Everything else, including catalog/schema/grant provisioning,
+deploys through the same `databricks bundle deploy` call as the jobs and
+metric views, which means one fewer tool in the loop and one fewer place
+for the "did both actually apply" drift the original design worried about.
 
 ## Topology recap
 
@@ -122,19 +137,62 @@ at a real dev workspace instead of a catalog inside one shared workspace.
 
 ## Phase E1 — Topology hardening *(critical path)*
 
-**Goal:** make the catalog isolation real, not assumed.
+**Goal:** make the catalog isolation real, not assumed. Split across two
+tools deliberately — the catalog/schema/grants live in the bundle (DAB
+resources are confirmed to support them), the workspace binding doesn't
+(confirmed absent from the bundle schema), so it's the one piece Terraform
+still owns.
 
-**Implement** (Terraform):
+**Implement — catalog, schema, grants** (`resources/catalogs_schemas.yml`,
+deployed via the bundle in Phase E2, not standalone):
+```yaml
+resources:
+  catalogs:
+    dev_catalog:
+      name: dev
+      comment: "Environment catalog: dev"
+      grants:
+        - principal: "semantic-consumers"
+          privileges: ["USE_CATALOG"]
+    prod_catalog:
+      name: prod
+      comment: "Environment catalog: prod"
+      grants:
+        - principal: "semantic-consumers"
+          privileges: ["USE_CATALOG"]
+
+  schemas:
+    dev_housing:
+      catalog_name: dev
+      name: housing
+      grants:
+        - principal: "semantic-consumers"
+          privileges: ["USE_SCHEMA"]
+    prod_housing:
+      catalog_name: prod
+      name: housing
+      grants:
+        - principal: "semantic-consumers"
+          privileges: ["USE_SCHEMA"]
+```
+These fields (`name`, `comment`, `grants` on both `catalogs` and `schemas`,
+`catalog_name` on `schemas`) are confirmed present in the installed CLI's
+bundle schema — not guessed.
+
+**Implement — workspace binding** (`terraform/workspace_bindings.tf`, the
+one piece that has to stay Terraform):
 ```hcl
 resource "databricks_catalog" "dev" {
   name           = "dev"
-  comment        = "Environment catalog: dev"
   isolation_mode = "ISOLATED"
+  # NOTE: if the bundle already created this catalog in Phase E2, either
+  # import it into Terraform state first, or have Terraform own creation
+  # here instead of the bundle — don't let both tools try to create the
+  # same catalog. Pick one owner per object.
 }
 
 resource "databricks_catalog" "prod" {
   name           = "prod"
-  comment        = "Environment catalog: prod"
   isolation_mode = "ISOLATED"
 }
 
@@ -147,25 +205,22 @@ resource "databricks_workspace_binding" "prod_binding" {
   securable_name = databricks_catalog.prod.name
   workspace_id   = var.prod_workspace_id
 }
-
-resource "databricks_schema" "dev_housing" {
-  catalog_name = databricks_catalog.dev.name
-  name         = "housing"
-}
-
-resource "databricks_schema" "prod_housing" {
-  catalog_name = databricks_catalog.prod.name
-  name         = "housing"
-}
 ```
 **[verify]** the exact resource name (`databricks_workspace_binding` vs.
-`databricks_catalog_workspace_binding`) and its required arguments against
-the current `databricks` Terraform provider docs before applying — provider
-resource names shift between versions.
+`databricks_catalog_workspace_binding`) against the current `databricks`
+Terraform provider docs — I confirmed *DABs* don't have this field by
+inspecting the CLI directly, but haven't verified the Terraform-side
+resource name the same way.
+
+The ownership note above matters more than it looks: decide **once** whether
+Terraform or the bundle creates the catalog object itself, and have the
+other tool only reference it (e.g., Terraform sets `isolation_mode` on a
+catalog the bundle created, rather than both trying to create it). Running
+both as independent creators is the fastest way to get drift between them.
 
 **Test:**
-- `terraform plan` shows the expected 6 resources; `terraform apply`
-  succeeds.
+- `databricks bundle deploy -t dev` creates the catalog/schema/grants;
+  `terraform apply` adds the isolation binding on top.
 - From the `dev` profile: `databricks catalogs list -p dev` — `prod` should
   **not** appear.
 - From the `prod` profile: `databricks catalogs list -p prod` — `dev`
@@ -182,10 +237,16 @@ resource names shift between versions.
 domain will scaffold from.
 
 **Implement:**
-- `databricks.yml` with two targets:
+- `databricks.yml` with two targets, including the catalog/schema/grants
+  resources from Phase E1:
   ```yaml
   bundle:
     name: rdu-semantic-layer
+
+  include:
+    - resources/catalogs_schemas.yml
+    - resources/semantic_deploy_job.yml
+
   targets:
     dev:
       default: true
@@ -335,8 +396,9 @@ domain — the actual test of "platform," not "one-off project."
 
 **Implement:**
 1. Add `semantic/finance/*.yaml` in the same monorepo.
-2. Add matching Terraform: `databricks_schema` for `dev.finance` and
-   `prod.finance`.
+2. Add matching schema entries to `resources/catalogs_schemas.yml` (DAB,
+   same as Phase E1 — no Terraform change needed, since schemas aren't a
+   Terraform-only concern here) for `dev.finance` and `prod.finance`.
 3. Add a `CODEOWNERS` entry for the finance domain team.
 4. Open a PR — **no changes to the CI workflow itself should be needed.**
 
