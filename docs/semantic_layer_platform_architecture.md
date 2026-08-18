@@ -6,7 +6,9 @@ monitoring — scoped to what's actually available on **Databricks Free
 Edition** (single workspace, single auto-provisioned metastore,
 serverless-only, quota-bound rather than billed) with **GitHub** as the
 CI/CD system. Companion to `docs/bi_serving_layer.md` (the two BI serving
-approaches) and `docs/enterprise_semantic_layer_infra.md` (the full
+approaches plus the optional Lakebase/API third surface),
+`docs/metric_view_lakebase_api_architecture.md` (that third surface's own
+design), and `docs/enterprise_semantic_layer_infra.md` (the full
 multi-workspace version to grow into once this tier is outgrown).
 
 Free Edition forces one structural decision that shapes every section below:

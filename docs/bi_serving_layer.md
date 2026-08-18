@@ -69,3 +69,15 @@ AI/BI Dashboards and Genie are available to Databricks SQL users with no extra
 license; Free Edition includes serverless SQL, so both are usable here. Genie
 quality depends on the metric view's semantics and curated sample questions —
 treat that curation as part of the build, not an afterthought.
+
+---
+
+## Optional third surface — API via Lakebase
+
+A metric view's grain-flexible `MEASURE()` querying isn't suited to
+low-latency, high-QPS application serving. For that use case, one grain of
+the metric view can be snapshotted into a physical table, synced to
+Databricks Lakebase (managed Postgres), and served over Lakebase's
+built-in Data API — a genuinely different consumption pattern from the two
+above, not a replacement for either. See
+`docs/metric_view_lakebase_api_architecture.md` and its execution runbook.

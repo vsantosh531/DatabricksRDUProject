@@ -129,5 +129,7 @@ Databricks (Free Edition), PySpark, Delta Lake, Auto Loader, Databricks
 Workflows, Unity Catalog. Acquisition automated with GitHub Actions + the
 Databricks CLI. Two serving layers: Power BI (external enterprise BI) and
 Databricks AI/BI — metric views, AI/BI Dashboards, and Genie (platform-native,
-no extra license). Python utilities tested with pytest. See
-`docs/ingestion_architecture.md` and `docs/bi_serving_layer.md`.
+no extra license) — plus an optional third, low-latency API surface via
+Lakebase (managed Postgres). Python utilities tested with pytest. See
+`docs/ingestion_architecture.md`, `docs/bi_serving_layer.md`, and
+`docs/metric_view_lakebase_api_architecture.md`.
