@@ -14,6 +14,7 @@
 
 # COMMAND ----------
 
+import re
 from pyspark.sql import functions as F
 
 CATALOG = "workspace"
@@ -45,8 +46,8 @@ county_bronze = spark.table(f"{BRONZE}.zillow_zori_county")
 META_COLS = ["RegionID", "SizeRank", "RegionName", "RegionType",
              "StateName", "State", "Metro", "CountyName"]
 meta_cols  = [c for c in county_bronze.columns if c in META_COLS]
-date_cols  = [c for c in county_bronze.columns if c not in META_COLS
-              and len(c) == 7 and c[4] == "-"]   # YYYY-MM pattern
+date_cols  = [c for c in county_bronze.columns
+              if re.fullmatch(r"\d{4}-\d{2}-\d{2}", c)]   # Zillow YYYY-MM-DD date columns
 
 print(f"Metadata columns: {len(meta_cols)}")
 print(f"Date columns: {len(date_cols)}  ({date_cols[0]} → {date_cols[-1]})")
@@ -64,7 +65,7 @@ county_long = (county_bronze
     .selectExpr(*[f"`{c}`" for c in meta_cols], stack_expr)
     .filter("zori IS NOT NULL")
     .withColumn("zori",    F.col("zori").cast("double"))
-    .withColumn("date_key", F.to_date(F.concat_ws("-", F.col("month_str"), F.lit("01"))))
+    .withColumn("date_key", F.to_date(F.col("month_str")))   # month_str is already YYYY-MM-DD
     .drop("month_str"))
 
 # COMMAND ----------
@@ -111,8 +112,8 @@ zip_bronze = spark.table(f"{BRONZE}.zillow_zori_zip")
 ZIP_META_COLS = ["RegionID", "SizeRank", "RegionName", "RegionType",
                  "StateName", "State", "Metro", "City", "CountyName"]
 zip_meta  = [c for c in zip_bronze.columns if c in ZIP_META_COLS]
-zip_dates = [c for c in zip_bronze.columns if c not in ZIP_META_COLS
-             and len(c) == 7 and c[4] == "-"]
+zip_dates = [c for c in zip_bronze.columns
+             if re.fullmatch(r"\d{4}-\d{2}-\d{2}", c)]   # Zillow YYYY-MM-DD date columns
 
 print(f"ZIP date columns: {len(zip_dates)}  ({zip_dates[0]} → {zip_dates[-1]})")
 
@@ -128,7 +129,7 @@ zip_long = (zip_bronze
     .selectExpr(*[f"`{c}`" for c in zip_meta], zip_stack)
     .filter("zori IS NOT NULL")
     .withColumn("zori",     F.col("zori").cast("double"))
-    .withColumn("date_key", F.to_date(F.concat_ws("-", F.col("month_str"), F.lit("01"))))
+    .withColumn("date_key", F.to_date(F.col("month_str")))   # month_str is already YYYY-MM-DD
     .drop("month_str")
     .select(
         F.col("RegionName").alias("zip"),
