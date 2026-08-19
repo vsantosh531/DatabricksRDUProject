@@ -354,3 +354,15 @@ resources:
             - task_key: 32_silver_rent_index
           notebook_task:
             notebook_path: ../notebooks/46_gold_zip_hotspots.py
+
+        # Semantic-layer snapshot: re-materializes one grain of
+        # gold.zip_hotspots_metric_view for Lakebase sync (see
+        # docs/metric_view_lakebase_api_architecture.md). The metric view
+        # queries gold.zip_hotspots live (it isn't materialized itself),
+        # so this only needs to wait on the gold table it reads from, not
+        # every other gold task.
+        - task_key: 52_semantic_zip_hotspots_snapshot
+          depends_on:
+            - task_key: 46_gold_zip_hotspots
+          notebook_task:
+            notebook_path: ../notebooks/52_semantic_zip_hotspots_snapshot.py
