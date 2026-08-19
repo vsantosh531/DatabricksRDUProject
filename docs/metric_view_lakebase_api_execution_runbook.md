@@ -201,13 +201,23 @@ session and could push the sizing above smaller or larger.
 
 **Checkpoint:** `list-endpoints` shows 0.5/0.5 CU, scale-to-zero enabled.
 
-**In the Databricks UI instead:** creating the project via **Lakebase** in
-the left sidebar works (confirmed — this is how the actual project used
-while writing this runbook was created). **Resizing the endpoint's
-compute units from the UI was not findable** on this workspace version —
-confirmed directly, not guessed; the UI navigation guess in an earlier
-draft of this doc was wrong. Use the CLI for this step instead, it's
-reliable and already verified:
+**In the Databricks UI instead** — corrected against the official
+Databricks docs (docs.databricks.com/aws/en/oltp/projects/get-started and
+.../manage-computes) after an earlier draft of this section guessed wrong
+and sent someone down a dead end. The endpoint settings live under the
+**branch**, not directly on the project page — that's the part the
+earlier guess missed:
+
+1. **App switcher** (top of the Databricks UI) → **Lakebase Postgres** app.
+2. Select **Autoscaling** (the tier `create-project` provisions by
+   default) → this is also where **New project** lives, if creating one
+   from scratch instead of the CLI.
+3. Open the project (**rdu-metrics-api**) → **Branches** page → select
+   the branch (**production**).
+4. Open its **Computes** tab → click **Edit** on the compute → adjust the
+   autoscaling min/max CU (or fixed size) → **Save**.
+
+Equivalent CLI path, already verified working against this real project:
 
 ```bash
 # Auto-created names are literally "production" and "primary"
