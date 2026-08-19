@@ -365,67 +365,96 @@ workspace version:
 
 ## Phase 5 — Data API access
 
-No dedicated CLI command enables the Data API — confirmed via
-`databricks postgres -h`, which lists infrastructure management commands
-only and explicitly says "to query or modify data, use the Data API or
-direct SQL connections," implying it's available by default once the
-project/synced table exist. **[verify]** in the project's UI page whether
-any toggle is needed to activate it, since this session found no CLI
-command for it either way.
+**Enabling it needs the UI, confirmed** — the Data API's enable step and
+its URL are UI-only per official docs
+(learn.microsoft.com/en-us/azure/databricks/oltp/projects/data-api), with
+no CLI/API alternative documented. Unlike the earlier phases, this one
+actually worked: **Lakebase project page → Data API tab → Enable Data
+API** produced a real URL —
+`https://<endpoint-host>/api/2.0/workspace/<workspace_id>/rest/<postgres_database>`
+(e.g. `.../rest/databricks_postgres`). Note this is *derivable*, contrary
+to what the docs implied — it's just the endpoint's own host (from
+`list-endpoints`) plus your workspace ID plus the Postgres database name.
 
-Create a read-only consumer role:
-
-```bash
-databricks postgres create-role -h   # confirm exact syntax before running
-```
-
-Then, connected via `psql` or the SQL editor (using
-`generate-database-credential` for a short-lived OAuth token per the
-Lakebase skill's connectivity reference):
-
-```sql
-CREATE ROLE api_consumer LOGIN;
-GRANT USAGE ON SCHEMA public TO api_consumer;
-GRANT SELECT ON zip_hotspots_metrics TO api_consumer;
--- Deliberately no INSERT/UPDATE/DELETE — Reverse ETL owns this table;
--- any write via the Data API would be silently overwritten on the next sync.
-```
-
-Test both directions:
+**Native login is off on this project** (`enable_pg_native_login: false`,
+confirmed via `get-project`). The `CREATE ROLE ... LOGIN` SQL from earlier
+drafts of this doc does not work here — roles must be OAuth-backed,
+created via `databricks postgres create-role`, not raw SQL. Confirmed
+working, using a dedicated service principal as the consumer identity:
 
 ```bash
-# Should succeed and return rows
-curl -H "Authorization: Bearer $TOKEN" \
-  "$DATA_API_URL/public/zip_hotspots_metrics?zip=eq.27601"
+# 1. Create the consumer identity
+databricks service-principals create --display-name "lakebase-api-consumer" -p DEFAULT
+databricks service-principal-secrets-proxy create <SP_ID> -p DEFAULT
+# note applicationId and secret
 
-# Should be REJECTED — this proves the write-lockout is real, not assumed
-curl -X POST -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"zip": "99999", "zip_name": "test"}' \
-  "$DATA_API_URL/public/zip_hotspots_metrics"
+# 2. Register it as a Postgres role (OAuth-backed, not native login)
+databricks postgres create-role projects/rdu-metrics-api/branches/production \
+  --role-id <SP_APPLICATION_ID> \
+  --json '{"spec": {"identity_type": "SERVICE_PRINCIPAL", "postgres_role": "<SP_APPLICATION_ID>", "auth_method": "LAKEBASE_OAUTH_V1"}}' \
+  -p DEFAULT
+# confirmed: role created with bypassrls/createdb/createrole all false — least privilege by default
 ```
 
-**Checkpoint:** the GET returns the expected row, and the POST is rejected
-with a permissions error — not silently accepted.
+**Grant `SELECT`, connecting as an already-privileged identity** — the
+project owner's role already has `DATABRICKS_SUPERUSER` membership by
+default (confirmed via `list-roles`), so use your own identity to grant
+the new role access, not the new role itself:
 
-**In the Databricks UI instead:**
-1. **Enable the Data API**: Lakebase project page → a **Data API** tab —
-   toggle it on if there's a switch, or it may simply display an endpoint
-   URL once the project exists (this session couldn't confirm which, per
-   the CLI phase's same open question). Copy the shown URL as
-   `$DATA_API_URL`.
-2. **Create the role and grants**: open **SQL Editor**, connect it to the
-   Lakebase database (workspaces with Lakebase typically let you pick a
-   Postgres/Lakebase connection alongside SQL warehouses in the editor's
-   connection dropdown), and run the `CREATE ROLE` / `GRANT` statements
-   there instead of via `psql`.
-3. **Testing the endpoint** stays outside the Databricks UI either way —
-   `curl`, a browser fetch, or an API client like Postman/Insomnia. There
-   isn't a Databricks-UI way to send a raw HTTP request to your own Data
-   API; this step is identical whether you did Phases 1–4 via CLI or UI.
+```bash
+pip install psycopg2-binary
+```
+```python
+import psycopg2
+token = ...  # from `databricks postgres generate-database-credential
+             # projects/rdu-metrics-api/branches/production/endpoints/primary -p DEFAULT`
 
-**[verify]** whether the Data API tab requires an explicit enable action
-or is on by default — same unresolved question as the CLI phase.
+conn = psycopg2.connect(
+    host="<endpoint-host-from-list-endpoints>",
+    port=5432, dbname="databricks_postgres",
+    user="<your-databricks-email>", password=token, sslmode="require",
+)
+conn.autocommit = True
+cur = conn.cursor()
+cur.execute('GRANT USAGE ON SCHEMA semantic TO "<SP_APPLICATION_ID>"')
+cur.execute('GRANT SELECT ON semantic.zip_hotspots_metrics TO "<SP_APPLICATION_ID>"')
+# Deliberately no INSERT/UPDATE/DELETE — Reverse ETL owns this table;
+# any write via the Data API would be silently overwritten on the next sync.
+```
+
+**Real, important correction: the synced table's schema is `semantic`,
+not `public`** — it mirrors the source Unity Catalog schema name, not a
+default `public` schema. Confirmed by listing `information_schema.tables`
+directly; row count matched the Delta source exactly (736 = 736).
+
+**Getting an OAuth token for the service principal** (client credentials
+grant, no browser needed):
+
+```bash
+curl -X POST "https://<workspace-host>/oidc/v1/token" \
+  -u "<SP_APPLICATION_ID>:<SP_SECRET>" \
+  -d "grant_type=client_credentials&scope=all-apis"
+# use the returned access_token as the Bearer token below
+```
+
+**Checkpoint reached, Data API call itself unresolved.** Everything above
+is confirmed working — sync, grants, both a user's and a service
+principal's OAuth tokens accepted by the server (structured PostgREST
+errors come back, not auth failures). What's **not** resolved: the exact
+URL path / schema-exposure convention this account's Data API proxy
+expects. Every combination tried
+(`$DATA_API_URL/semantic/zip_hotspots_metrics`,
+`Accept-Profile: semantic` header with `/zip_hotspots_metrics`, and
+several more) returned `PGRST106 "Invalid schema: unknown"` — with the
+hint suspiciously echoing back whatever schema name was just requested,
+which looks like a broken hint template rather than real validation.
+Hitting the bare base URL with no trailing slash produced a *different*
+error (`PGRST205`, "could not find the table" — using the whole proxy
+path as a table lookup), confirming the routing behaves inconsistently
+rather than just rejecting an invalid name. This looks like a genuine
+platform quirk on this tier, not a gap resolvable by guessing more URL
+shapes — **worth raising with Databricks support or the community forum**
+rather than continuing to reverse-engineer it here.
 
 ---
 
