@@ -294,29 +294,32 @@ snapshot task — don't give it an independent schedule.
 **Checkpoint:** row count in the Postgres-side synced table matches the
 Delta source table's row count (query both and compare).
 
-**In the Databricks UI instead** — corrected against the official
-Databricks docs (docs.databricks.com/aws/en/oltp/projects/reverse-etl,
-fetched live after an earlier guess sent someone down a dead end). The
-entry point is the **source table's own page** in Catalog Explorer, not a
-tab on the Lakebase project page:
+**UI path unconfirmed on this account — default to the CLI for this step.**
+The steps below are what the official docs
+(docs.databricks.com/aws/en/oltp/projects/reverse-etl) describe, but they
+didn't match what was actually visible in Catalog on this workspace when
+tested directly — the second UI guess in this phase to not hold up. The
+official Free Edition limitations page doesn't mention synced tables or
+this wizard either way, so this isn't confirmed as a Free Edition gap —
+it's genuinely unresolved. Rather than guess a third time, **use the CLI
+command in the block above** (`databricks postgres create-synced-table`)
+— it's confirmed to exist on this account and is the same tool that
+already worked for project creation and endpoint resizing.
 
-1. **Enable CDF**: **SQL Editor** (left sidebar) → new query → paste the
+Documented UI steps, kept for reference in case they match a different
+workspace version:
+1. **Enable CDF**: **SQL Editor** → new query → paste the
    `ALTER TABLE ... SET TBLPROPERTIES` statement above → pick a Databricks
-   SQL warehouse → **Run**. (If skipped, the dialog in step 3 shows this
-   same command as a warning — you can also enable it from there.)
-2. **Catalog** (left sidebar) → `workspace` → `semantic` →
+   SQL warehouse → **Run**.
+2. **Catalog** → `workspace` → `semantic` →
    `zip_hotspots_metrics_snapshot` → open the table's detail page.
-3. Click **Create** → **Synced table**.
-4. In the **Create synced table** dialog: table name for the synced
-   table, **Database type** = **Lakebase Serverless (Autoscaling)**,
-   **Sync mode** = **Triggered** (same reasoning as the CLI path —
-   Continuous wastes quota on weekly-cadence data, Snapshot's resync story
-   is unclear), select project **rdu-metrics-api** / branch
-   **production** / database, verify **Primary key** auto-detected `zip`.
-5. Click **Create**.
-6. Monitor progress back on the table's **Overview** tab in Catalog —
-   shows sync status, pipeline status, and last-sync timestamp. **Sync
-   now** triggers a manual refresh.
+3. Look for a **Create** button → **Synced table** option.
+4. If found, the dialog should prompt for: synced table name, **Database
+   type** = **Lakebase Serverless (Autoscaling)**, **Sync mode** =
+   **Triggered**, project/branch/database, and a **Primary key** field to
+   verify (`zip`).
+5. If step 3's **Create** button isn't there, or has no **Synced table**
+   option, stop guessing at the UI and use the CLI path instead.
 
 ---
 
