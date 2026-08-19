@@ -201,19 +201,28 @@ session and could push the sizing above smaller or larger.
 
 **Checkpoint:** `list-endpoints` shows 0.5/0.5 CU, scale-to-zero enabled.
 
-**In the Databricks UI instead:**
-1. Left sidebar → **Lakebase** (or under a **Compute**/**Postgres**
-   grouping, depending on workspace version — Lakebase is a newer, Beta
-   product area and its exact nav placement isn't something this session
-   verified live) → **Create project** / **New database**.
-2. Project ID: `rdu-metrics-api`. Display name: `RDU Metrics API`. Create.
-3. This auto-creates a `production` branch and a `primary` endpoint —
-   open the project page, find the **Compute**/**Endpoints** tab.
-4. Edit the primary endpoint → set both **Min Compute Units** and **Max
-   Compute Units** to `0.5` → Save.
+**In the Databricks UI instead:** creating the project via **Lakebase** in
+the left sidebar works (confirmed — this is how the actual project used
+while writing this runbook was created). **Resizing the endpoint's
+compute units from the UI was not findable** on this workspace version —
+confirmed directly, not guessed; the UI navigation guess in an earlier
+draft of this doc was wrong. Use the CLI for this step instead, it's
+reliable and already verified:
 
-**[verify]** the exact left-nav label — try "Lakebase" first; if not
-present, check under a general "Compute" or "Data" section.
+```bash
+# Auto-created names are literally "production" and "primary"
+databricks postgres list-branches projects/rdu-metrics-api -p DEFAULT
+databricks postgres list-endpoints projects/rdu-metrics-api/branches/production -p DEFAULT
+
+databricks postgres update-endpoint \
+  projects/rdu-metrics-api/branches/production/endpoints/primary \
+  "spec.autoscaling_limit_min_cu,spec.autoscaling_limit_max_cu" \
+  --json '{"spec": {"autoscaling_limit_min_cu": 0.5, "autoscaling_limit_max_cu": 0.5}}' \
+  -p DEFAULT
+```
+
+Confirm via the same `list-endpoints` call — `autoscaling_limit_min_cu`/
+`max_cu` should read `0.5` in the response.
 
 ---
 
