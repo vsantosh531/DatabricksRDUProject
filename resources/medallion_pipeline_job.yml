@@ -3,15 +3,17 @@ resources:
     rdu_medallion_pipeline:
       name: "RDU Medallion Pipeline (events_medallion -> bronze -> silver -> gold)"
       tasks:
-        # Gate the entire pipeline on events_medallion completing first.
-        # This is a scheduling dependency, not a data dependency today --
-        # events_medallion is a placeholder pipeline intended to feed real
-        # data into this project later (see docs/enterprise plan notes).
+        # Fully sequential by design: every task depends on exactly the one
+        # before it in this file, forming a single linear chain rather than
+        # the fan-out/fan-in graph this job used previously. Trades away
+        # the parallelism that let bronze/silver finish in ~13 minutes for
+        # fully deterministic, one-at-a-time execution.
+
         - task_key: trigger_events_medallion
           pipeline_task:
             pipeline_id: 398f2ceb-3e48-4d3a-88b6-80252fbf7909
 
-        # ---- Bronze (13 notebooks, all gated only on events_medallion) ----
+        # ---- Bronze (13 notebooks, strictly sequential) ----
         - task_key: 01_bronze_fhfa
           depends_on:
             - task_key: trigger_events_medallion
@@ -19,285 +21,132 @@ resources:
             notebook_path: ../notebooks/01_bronze_fhfa.py
         - task_key: 02_bronze_redfin
           depends_on:
-            - task_key: trigger_events_medallion
+            - task_key: 01_bronze_fhfa
           notebook_task:
             notebook_path: ../notebooks/02_bronze_redfin.py
         - task_key: 03_bronze_fred
           depends_on:
-            - task_key: trigger_events_medallion
+            - task_key: 02_bronze_redfin
           notebook_task:
             notebook_path: ../notebooks/03_bronze_fred.py
         - task_key: 04_bronze_census
           depends_on:
-            - task_key: trigger_events_medallion
+            - task_key: 03_bronze_fred
           notebook_task:
             notebook_path: ../notebooks/04_bronze_census.py
         - task_key: 05_bronze_wake
           depends_on:
-            - task_key: trigger_events_medallion
+            - task_key: 04_bronze_census
           notebook_task:
             notebook_path: ../notebooks/05_bronze_wake.py
         - task_key: 06_bronze_nc_parcels
           depends_on:
-            - task_key: trigger_events_medallion
+            - task_key: 05_bronze_wake
           notebook_task:
             notebook_path: ../notebooks/06_bronze_nc_parcels.py
         - task_key: 06_bronze_realtor
           depends_on:
-            - task_key: trigger_events_medallion
+            - task_key: 06_bronze_nc_parcels
           notebook_task:
             notebook_path: ../notebooks/06_bronze_realtor.py
         - task_key: 07_bronze_census_housing
           depends_on:
-            - task_key: trigger_events_medallion
+            - task_key: 06_bronze_realtor
           notebook_task:
             notebook_path: ../notebooks/07_bronze_census_housing.py
         - task_key: 07_bronze_zillow_rent
           depends_on:
-            - task_key: trigger_events_medallion
+            - task_key: 07_bronze_census_housing
           notebook_task:
             notebook_path: ../notebooks/07_bronze_zillow_rent.py
         - task_key: 08_bronze_bps
           depends_on:
-            - task_key: trigger_events_medallion
+            - task_key: 07_bronze_zillow_rent
           notebook_task:
             notebook_path: ../notebooks/08_bronze_bps.py
         - task_key: 08_ingest_zillow_direct
           depends_on:
-            - task_key: trigger_events_medallion
+            - task_key: 08_bronze_bps
           notebook_task:
             notebook_path: ../notebooks/08_ingest_zillow_direct.py
         - task_key: 09_bronze_bls_laus
           depends_on:
-            - task_key: trigger_events_medallion
+            - task_key: 08_ingest_zillow_direct
           notebook_task:
             notebook_path: ../notebooks/09_bronze_bls_laus.py
         - task_key: 10_bronze_fred_indicators
           depends_on:
-            - task_key: trigger_events_medallion
+            - task_key: 09_bronze_bls_laus
           notebook_task:
             notebook_path: ../notebooks/10_bronze_fred_indicators.py
 
-        # ---- Silver (12 notebooks, each gated on ALL bronze completing) ----
+        # ---- Silver (12 notebooks, strictly sequential) ----
         - task_key: 20_silver_dim_geography
           depends_on:
-            - task_key: 01_bronze_fhfa
-            - task_key: 02_bronze_redfin
-            - task_key: 03_bronze_fred
-            - task_key: 04_bronze_census
-            - task_key: 05_bronze_wake
-            - task_key: 06_bronze_nc_parcels
-            - task_key: 06_bronze_realtor
-            - task_key: 07_bronze_census_housing
-            - task_key: 07_bronze_zillow_rent
-            - task_key: 08_bronze_bps
-            - task_key: 08_ingest_zillow_direct
-            - task_key: 09_bronze_bls_laus
             - task_key: 10_bronze_fred_indicators
           notebook_task:
             notebook_path: ../notebooks/20_silver_dim_geography.py
         - task_key: 21_silver_dim_metro
           depends_on:
-            - task_key: 01_bronze_fhfa
-            - task_key: 02_bronze_redfin
-            - task_key: 03_bronze_fred
-            - task_key: 04_bronze_census
-            - task_key: 05_bronze_wake
-            - task_key: 06_bronze_nc_parcels
-            - task_key: 06_bronze_realtor
-            - task_key: 07_bronze_census_housing
-            - task_key: 07_bronze_zillow_rent
-            - task_key: 08_bronze_bps
-            - task_key: 08_ingest_zillow_direct
-            - task_key: 09_bronze_bls_laus
-            - task_key: 10_bronze_fred_indicators
+            - task_key: 20_silver_dim_geography
           notebook_task:
             notebook_path: ../notebooks/21_silver_dim_metro.py
         - task_key: 22_silver_dim_date
           depends_on:
-            - task_key: 01_bronze_fhfa
-            - task_key: 02_bronze_redfin
-            - task_key: 03_bronze_fred
-            - task_key: 04_bronze_census
-            - task_key: 05_bronze_wake
-            - task_key: 06_bronze_nc_parcels
-            - task_key: 06_bronze_realtor
-            - task_key: 07_bronze_census_housing
-            - task_key: 07_bronze_zillow_rent
-            - task_key: 08_bronze_bps
-            - task_key: 08_ingest_zillow_direct
-            - task_key: 09_bronze_bls_laus
-            - task_key: 10_bronze_fred_indicators
+            - task_key: 21_silver_dim_metro
           notebook_task:
             notebook_path: ../notebooks/22_silver_dim_date.py
         - task_key: 23_silver_home_prices
           depends_on:
-            - task_key: 01_bronze_fhfa
-            - task_key: 02_bronze_redfin
-            - task_key: 03_bronze_fred
-            - task_key: 04_bronze_census
-            - task_key: 05_bronze_wake
-            - task_key: 06_bronze_nc_parcels
-            - task_key: 06_bronze_realtor
-            - task_key: 07_bronze_census_housing
-            - task_key: 07_bronze_zillow_rent
-            - task_key: 08_bronze_bps
-            - task_key: 08_ingest_zillow_direct
-            - task_key: 09_bronze_bls_laus
-            - task_key: 10_bronze_fred_indicators
+            - task_key: 22_silver_dim_date
           notebook_task:
             notebook_path: ../notebooks/23_silver_home_prices.py
         - task_key: 24_silver_market_activity
           depends_on:
-            - task_key: 01_bronze_fhfa
-            - task_key: 02_bronze_redfin
-            - task_key: 03_bronze_fred
-            - task_key: 04_bronze_census
-            - task_key: 05_bronze_wake
-            - task_key: 06_bronze_nc_parcels
-            - task_key: 06_bronze_realtor
-            - task_key: 07_bronze_census_housing
-            - task_key: 07_bronze_zillow_rent
-            - task_key: 08_bronze_bps
-            - task_key: 08_ingest_zillow_direct
-            - task_key: 09_bronze_bls_laus
-            - task_key: 10_bronze_fred_indicators
+            - task_key: 23_silver_home_prices
           notebook_task:
             notebook_path: ../notebooks/24_silver_market_activity.py
         - task_key: 25_silver_rentals
           depends_on:
-            - task_key: 01_bronze_fhfa
-            - task_key: 02_bronze_redfin
-            - task_key: 03_bronze_fred
-            - task_key: 04_bronze_census
-            - task_key: 05_bronze_wake
-            - task_key: 06_bronze_nc_parcels
-            - task_key: 06_bronze_realtor
-            - task_key: 07_bronze_census_housing
-            - task_key: 07_bronze_zillow_rent
-            - task_key: 08_bronze_bps
-            - task_key: 08_ingest_zillow_direct
-            - task_key: 09_bronze_bls_laus
-            - task_key: 10_bronze_fred_indicators
+            - task_key: 24_silver_market_activity
           notebook_task:
             notebook_path: ../notebooks/25_silver_rentals.py
         - task_key: 26_silver_demographics
           depends_on:
-            - task_key: 01_bronze_fhfa
-            - task_key: 02_bronze_redfin
-            - task_key: 03_bronze_fred
-            - task_key: 04_bronze_census
-            - task_key: 05_bronze_wake
-            - task_key: 06_bronze_nc_parcels
-            - task_key: 06_bronze_realtor
-            - task_key: 07_bronze_census_housing
-            - task_key: 07_bronze_zillow_rent
-            - task_key: 08_bronze_bps
-            - task_key: 08_ingest_zillow_direct
-            - task_key: 09_bronze_bls_laus
-            - task_key: 10_bronze_fred_indicators
+            - task_key: 25_silver_rentals
           notebook_task:
             notebook_path: ../notebooks/26_silver_demographics.py
         - task_key: 27_silver_economic_indicators
           depends_on:
-            - task_key: 01_bronze_fhfa
-            - task_key: 02_bronze_redfin
-            - task_key: 03_bronze_fred
-            - task_key: 04_bronze_census
-            - task_key: 05_bronze_wake
-            - task_key: 06_bronze_nc_parcels
-            - task_key: 06_bronze_realtor
-            - task_key: 07_bronze_census_housing
-            - task_key: 07_bronze_zillow_rent
-            - task_key: 08_bronze_bps
-            - task_key: 08_ingest_zillow_direct
-            - task_key: 09_bronze_bls_laus
-            - task_key: 10_bronze_fred_indicators
+            - task_key: 26_silver_demographics
           notebook_task:
             notebook_path: ../notebooks/27_silver_economic_indicators.py
         - task_key: 28_silver_building_permits
           depends_on:
-            - task_key: 01_bronze_fhfa
-            - task_key: 02_bronze_redfin
-            - task_key: 03_bronze_fred
-            - task_key: 04_bronze_census
-            - task_key: 05_bronze_wake
-            - task_key: 06_bronze_nc_parcels
-            - task_key: 06_bronze_realtor
-            - task_key: 07_bronze_census_housing
-            - task_key: 07_bronze_zillow_rent
-            - task_key: 08_bronze_bps
-            - task_key: 08_ingest_zillow_direct
-            - task_key: 09_bronze_bls_laus
-            - task_key: 10_bronze_fred_indicators
+            - task_key: 27_silver_economic_indicators
           notebook_task:
             notebook_path: ../notebooks/28_silver_building_permits.py
         - task_key: 29_silver_parcel_sales
           depends_on:
-            - task_key: 01_bronze_fhfa
-            - task_key: 02_bronze_redfin
-            - task_key: 03_bronze_fred
-            - task_key: 04_bronze_census
-            - task_key: 05_bronze_wake
-            - task_key: 06_bronze_nc_parcels
-            - task_key: 06_bronze_realtor
-            - task_key: 07_bronze_census_housing
-            - task_key: 07_bronze_zillow_rent
-            - task_key: 08_bronze_bps
-            - task_key: 08_ingest_zillow_direct
-            - task_key: 09_bronze_bls_laus
-            - task_key: 10_bronze_fred_indicators
+            - task_key: 28_silver_building_permits
           notebook_task:
             notebook_path: ../notebooks/29_silver_parcel_sales.py
         - task_key: 30_silver_data_quality_log
           depends_on:
-            - task_key: 01_bronze_fhfa
-            - task_key: 02_bronze_redfin
-            - task_key: 03_bronze_fred
-            - task_key: 04_bronze_census
-            - task_key: 05_bronze_wake
-            - task_key: 06_bronze_nc_parcels
-            - task_key: 06_bronze_realtor
-            - task_key: 07_bronze_census_housing
-            - task_key: 07_bronze_zillow_rent
-            - task_key: 08_bronze_bps
-            - task_key: 08_ingest_zillow_direct
-            - task_key: 09_bronze_bls_laus
-            - task_key: 10_bronze_fred_indicators
+            - task_key: 29_silver_parcel_sales
           notebook_task:
             notebook_path: ../notebooks/30_silver_data_quality_log.py
         - task_key: 32_silver_rent_index
           depends_on:
-            - task_key: 01_bronze_fhfa
-            - task_key: 02_bronze_redfin
-            - task_key: 03_bronze_fred
-            - task_key: 04_bronze_census
-            - task_key: 05_bronze_wake
-            - task_key: 06_bronze_nc_parcels
-            - task_key: 06_bronze_realtor
-            - task_key: 07_bronze_census_housing
-            - task_key: 07_bronze_zillow_rent
-            - task_key: 08_bronze_bps
-            - task_key: 08_ingest_zillow_direct
-            - task_key: 09_bronze_bls_laus
-            - task_key: 10_bronze_fred_indicators
+            - task_key: 30_silver_data_quality_log
           notebook_task:
             notebook_path: ../notebooks/32_silver_rent_index.py
 
-        # ---- Gold (7 notebooks, dependency chain confirmed live by grep) ----
+        # ---- Gold (7 notebooks, strictly sequential -- same order the
+        # confirmed dependency chain already required, now enforced task
+        # by task rather than only at the tier boundary) ----
         - task_key: 40_gold_county_market_monthly
           depends_on:
-            - task_key: 20_silver_dim_geography
-            - task_key: 21_silver_dim_metro
-            - task_key: 22_silver_dim_date
-            - task_key: 23_silver_home_prices
-            - task_key: 24_silver_market_activity
-            - task_key: 25_silver_rentals
-            - task_key: 26_silver_demographics
-            - task_key: 27_silver_economic_indicators
-            - task_key: 28_silver_building_permits
-            - task_key: 29_silver_parcel_sales
-            - task_key: 30_silver_data_quality_log
             - task_key: 32_silver_rent_index
           notebook_task:
             notebook_path: ../notebooks/40_gold_county_market_monthly.py
@@ -313,54 +162,26 @@ resources:
             notebook_path: ../notebooks/42_gold_rent_vs_buy.py
         - task_key: 43_gold_market_health_score
           depends_on:
-            - task_key: 40_gold_county_market_monthly
-            - task_key: 41_gold_affordability_monthly
+            - task_key: 42_gold_rent_vs_buy
           notebook_task:
             notebook_path: ../notebooks/43_gold_market_health_score.py
         - task_key: 44_gold_supply_demand_signals
           depends_on:
-            - task_key: 40_gold_county_market_monthly
+            - task_key: 43_gold_market_health_score
           notebook_task:
             notebook_path: ../notebooks/44_gold_supply_demand_signals.py
         - task_key: 45_gold_assessor_vs_market
           depends_on:
-            - task_key: 20_silver_dim_geography
-            - task_key: 21_silver_dim_metro
-            - task_key: 22_silver_dim_date
-            - task_key: 23_silver_home_prices
-            - task_key: 24_silver_market_activity
-            - task_key: 25_silver_rentals
-            - task_key: 26_silver_demographics
-            - task_key: 27_silver_economic_indicators
-            - task_key: 28_silver_building_permits
-            - task_key: 29_silver_parcel_sales
-            - task_key: 30_silver_data_quality_log
-            - task_key: 32_silver_rent_index
+            - task_key: 44_gold_supply_demand_signals
           notebook_task:
             notebook_path: ../notebooks/45_gold_assessor_vs_market.py
         - task_key: 46_gold_zip_hotspots
           depends_on:
-            - task_key: 20_silver_dim_geography
-            - task_key: 21_silver_dim_metro
-            - task_key: 22_silver_dim_date
-            - task_key: 23_silver_home_prices
-            - task_key: 24_silver_market_activity
-            - task_key: 25_silver_rentals
-            - task_key: 26_silver_demographics
-            - task_key: 27_silver_economic_indicators
-            - task_key: 28_silver_building_permits
-            - task_key: 29_silver_parcel_sales
-            - task_key: 30_silver_data_quality_log
-            - task_key: 32_silver_rent_index
+            - task_key: 45_gold_assessor_vs_market
           notebook_task:
             notebook_path: ../notebooks/46_gold_zip_hotspots.py
 
-        # Semantic-layer snapshot: re-materializes one grain of
-        # gold.zip_hotspots_metric_view for Lakebase sync (see
-        # docs/metric_view_lakebase_api_architecture.md). The metric view
-        # queries gold.zip_hotspots live (it isn't materialized itself),
-        # so this only needs to wait on the gold table it reads from, not
-        # every other gold task.
+        # ---- Semantic snapshot (last) ----
         - task_key: 52_semantic_zip_hotspots_snapshot
           depends_on:
             - task_key: 46_gold_zip_hotspots
