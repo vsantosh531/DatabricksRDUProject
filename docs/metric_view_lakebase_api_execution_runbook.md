@@ -451,10 +451,21 @@ which looks like a broken hint template rather than real validation.
 Hitting the bare base URL with no trailing slash produced a *different*
 error (`PGRST205`, "could not find the table" — using the whole proxy
 path as a table lookup), confirming the routing behaves inconsistently
-rather than just rejecting an invalid name. This looks like a genuine
-platform quirk on this tier, not a gap resolvable by guessing more URL
-shapes — **worth raising with Databricks support or the community forum**
-rather than continuing to reverse-engineer it here.
+rather than just rejecting an invalid name.
+
+**Confirmed, not just suspected: the hint is not real validation
+feedback.** Also tried `schema.table` and `catalog.schema.table` as
+single dotted path segments (matching the naming convention used
+everywhere else in this API, e.g. the synced table's own resource name)
+— both rejected identically, with the hint again exactly echoing back
+whatever was sent (`semantic.zip_hotspots_metrics`, then
+`workspace.semantic.zip_hotspots_metrics`). Four structurally different,
+individually reasonable URL shapes all produced the same "echo the input
+back as the only exposed schema" behavior. That rules out "wrong naming
+convention" as the explanation — this is a genuine bug or platform
+limitation on this tier, not a syntax this session hasn't guessed yet.
+**Stop here; raise with Databricks support or the community forum**
+rather than continuing to try URL variations.
 
 ---
 
