@@ -238,12 +238,30 @@ Confirm via the same `list-endpoints` call — `autoscaling_limit_min_cu`/
 
 ## Phase 4 — Sync the snapshot table into Lakebase
 
-Enable Change Data Feed on the source table (required for Triggered sync):
+**This phase touches two different SQL systems — know which one each
+command runs against.** `TBLPROPERTIES` and `delta.enableChangeDataFeed`
+are Delta Lake/Databricks-specific syntax; plain PostgreSQL has never heard
+of either and will fail with a `syntax error at or near "TBLPROPERTIES"`
+(`SQLSTATE 42601`) if you paste it into a Postgres/Lakebase connection —
+that exact mistake happened while writing this runbook. If you still have
+a Lakebase SQL connection open from Phase 3, switch back to a Databricks
+SQL warehouse connection before running the first command below.
+
+**① Databricks SQL (Delta/UC side)** — enable Change Data Feed on the
+source table (required for Triggered sync). Run this in the Databricks
+**SQL Editor** with a Databricks SQL warehouse selected, or via the CLI
+against a warehouse (`databricks experimental aitools tools query
+--warehouse <WAREHOUSE_ID> -p DEFAULT "..."`) — **not** through a Postgres
+connection:
 
 ```sql
 ALTER TABLE workspace.semantic.zip_hotspots_metrics_snapshot
 SET TBLPROPERTIES (delta.enableChangeDataFeed = true)
 ```
+
+**② Databricks CLI** (`postgres` command group — this one manages Lakebase
+infrastructure via the Databricks control plane, not a direct Postgres SQL
+connection, so it's unambiguous which system it targets):
 
 ```bash
 databricks postgres create-synced-table \
