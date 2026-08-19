@@ -117,7 +117,8 @@ bronze = (bronze
                                        "[^0-9.]", "").cast("double"))
           .withColumn("heated_area",    F.col("heated_area").cast("double"))
           .withColumn("year_built",     F.col("year_built").cast("integer"))
-          .withColumn("sale_date",      F.to_date(F.col("sale_date")))
+          .withColumn("sale_date",
+                      F.to_date(F.from_unixtime(F.col("sale_date").cast("long") / 1000)))
           .withColumn("_ingested_at",   F.current_timestamp())
           .withColumn("_source_file",   F.lit(SOURCE_FILE)))
 
