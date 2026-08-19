@@ -13,6 +13,15 @@ Same as `docs/semantic_layer_execution_runbook.md`: a terminal on your own
 computer, `-p DEFAULT` profile (already authenticated on this account),
 not a notebook or the web UI except where a phase says otherwise.
 
+**UI alternative, with an honesty caveat.** Each phase below now also has
+an "**In the Databricks UI instead:**" block. One real difference from
+everything else in this doc: the CLI commands were run live against this
+account and verified; the UI steps were not — this session has no browser
+access, so they're standard Databricks product navigation, not
+click-by-click confirmed the same way. Menu labels can drift between
+workspace versions; if a label doesn't match what's described, look for
+the nearest equivalent rather than assuming the feature moved.
+
 ---
 
 ## Phase 0 — Verify the Lakebase CLI surface
@@ -48,6 +57,14 @@ At the time this runbook was written, the confirmed dimensions were `zip`,
 **Checkpoint:** you know which CLI group you're using and have the current,
 real measure names in hand — not the ones printed in this doc if they've
 since changed.
+
+**In the Databricks UI instead:** open **Catalog** (left sidebar) →
+navigate `workspace` → `gold` → `zip_hotspots_metric_view`. The object's
+detail page shows its dimensions and measures directly (metric views
+render their YAML/column structure in Catalog Explorer) — no CLI needed
+for this check. The CLI-group discovery part of this phase (`postgres` vs
+`database`) has no UI equivalent — it's purely a CLI concern, skip it if
+you're staying in the UI throughout.
 
 ---
 
@@ -110,29 +127,40 @@ tiny (one row per ZIP), so there's no benefit to incremental merge logic.
 `price_reduction_rate` values match what you'd get querying the metric
 view directly at this grain (spot-check 2–3 rows by hand).
 
+**In the Databricks UI instead:**
+1. **Workspace** (left sidebar) → your user folder → **Create → Notebook**.
+2. Name it `52_semantic_zip_hotspots_snapshot`, language **Python**.
+3. Paste the code block above into the first cell.
+4. Leave compute on serverless (the account default) and click **Run all**.
+5. Verify: **Catalog** → `workspace` → `semantic` →
+   `zip_hotspots_metrics_snapshot` → the **Sample Data** tab previews rows
+   directly, same check as the CLI's `tables get`.
+
 ---
 
 ## Phase 2 — Wire the snapshot into the existing pipeline job
 
-**Not** an independently scheduled job — it must run *after* gold
-refreshes, or it'll snapshot stale data. This repo's `workflows/`
-directory is currently an empty placeholder and the orchestration job
-lives in the Databricks UI (README's "Orchestration: monthly Databricks
-Workflow" checklist item is unchecked as of this writing) — so do this
-step wherever your actual gold-refresh job currently lives:
+**Already done, not still a manual step.** `resources/medallion_pipeline_job.yml`
+now includes `52_semantic_zip_hotspots_snapshot` as a task depending on
+`46_gold_zip_hotspots`, deployed via `databricks bundle deploy`. What
+follows is the UI-only path for reference — e.g. if you're managing a job
+outside this bundle, or want to see it without opening the YAML.
 
-- **If orchestrated via the Jobs UI**: open the existing workflow, add a
-  new task running `notebooks/52_semantic_zip_hotspots_snapshot.py`, set
-  its "Depends on" to the task that refreshes `gold.zip_hotspots`.
-- **If/when this pipeline moves to Databricks Asset Bundles** (as
-  `docs/semantic_layer_platform_architecture.md` Phase 2 already
-  recommends doing for the metric view deploy), add this as a declarative
-  task in that bundle instead of doing it by hand — don't build two
-  parallel job-definition mechanisms.
+**In the Databricks UI instead:**
+1. **Workflows** (left sidebar) → open **RDU Medallion Pipeline**
+   (`events_medallion -> bronze -> silver -> gold`).
+2. The **Tasks** tab shows the graph — `52_semantic_zip_hotspots_snapshot`
+   already sits after `46_gold_zip_hotspots` with an arrow between them;
+   nothing to add.
+3. To build this by hand in a different job instead: **Tasks** tab → **+
+   Add task** → Type **Notebook** → path to
+   `52_semantic_zip_hotspots_snapshot` → **Depends on** → select the task
+   that refreshes `gold.zip_hotspots` → **Create task**.
 
-**Checkpoint:** a manual run of the whole job (or just the two tasks in
-sequence) refreshes the snapshot table after gold, in one dependency
-chain — not two independently-scheduled jobs that could race.
+**Checkpoint:** the job's task graph shows the snapshot task with exactly
+one incoming dependency — the gold-refresh task — not zero (which would
+mean it runs on its own schedule against possibly-stale gold data) and not
+many (which would just be extra, unneeded waiting).
 
 ---
 
@@ -172,6 +200,20 @@ quota (compute-hours, storage cap, project-count cap) beyond what
 session and could push the sizing above smaller or larger.
 
 **Checkpoint:** `list-endpoints` shows 0.5/0.5 CU, scale-to-zero enabled.
+
+**In the Databricks UI instead:**
+1. Left sidebar → **Lakebase** (or under a **Compute**/**Postgres**
+   grouping, depending on workspace version — Lakebase is a newer, Beta
+   product area and its exact nav placement isn't something this session
+   verified live) → **Create project** / **New database**.
+2. Project ID: `rdu-metrics-api`. Display name: `RDU Metrics API`. Create.
+3. This auto-creates a `production` branch and a `primary` endpoint —
+   open the project page, find the **Compute**/**Endpoints** tab.
+4. Edit the primary endpoint → set both **Min Compute Units** and **Max
+   Compute Units** to `0.5` → Save.
+
+**[verify]** the exact left-nav label — try "Lakebase" first; if not
+present, check under a general "Compute" or "Data" section.
 
 ---
 
@@ -214,6 +256,26 @@ snapshot task — don't give it an independent schedule.
 
 **Checkpoint:** row count in the Postgres-side synced table matches the
 Delta source table's row count (query both and compare).
+
+**In the Databricks UI instead:**
+1. **Enable CDF**: **SQL Editor** (left sidebar) → new query → paste the
+   `ALTER TABLE ... SET TBLPROPERTIES` statement above → pick a warehouse
+   → **Run**.
+2. **Create the synced table**: either from **Catalog** →
+   `zip_hotspots_metrics_snapshot` → an action menu offering "Sync to
+   Lakebase" / "Create synced table", or from the Lakebase project page →
+   a **Tables** or **Synced Tables** tab → **Create synced table** /
+   **Sync a table**. Either entry point should prompt for: source table
+   (`workspace.semantic.zip_hotspots_metrics_snapshot`), target
+   project/database, primary key column (`zip`), and sync mode — pick
+   **Triggered**, same reasoning as the CLI path (Continuous wastes quota
+   on data that only changes weekly; Snapshot's resync story is unclear).
+3. Create, then wait for the initial sync to complete (shown as a status
+   on the synced table's page).
+
+**[verify]** the exact entry point (Catalog Explorer table menu vs.
+Lakebase project page) — this session couldn't confirm which one this
+workspace version surfaces; check both.
 
 ---
 
@@ -262,6 +324,25 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 **Checkpoint:** the GET returns the expected row, and the POST is rejected
 with a permissions error — not silently accepted.
 
+**In the Databricks UI instead:**
+1. **Enable the Data API**: Lakebase project page → a **Data API** tab —
+   toggle it on if there's a switch, or it may simply display an endpoint
+   URL once the project exists (this session couldn't confirm which, per
+   the CLI phase's same open question). Copy the shown URL as
+   `$DATA_API_URL`.
+2. **Create the role and grants**: open **SQL Editor**, connect it to the
+   Lakebase database (workspaces with Lakebase typically let you pick a
+   Postgres/Lakebase connection alongside SQL warehouses in the editor's
+   connection dropdown), and run the `CREATE ROLE` / `GRANT` statements
+   there instead of via `psql`.
+3. **Testing the endpoint** stays outside the Databricks UI either way —
+   `curl`, a browser fetch, or an API client like Postman/Insomnia. There
+   isn't a Databricks-UI way to send a raw HTTP request to your own Data
+   API; this step is identical whether you did Phases 1–4 via CLI or UI.
+
+**[verify]** whether the Data API tab requires an explicit enable action
+or is on by default — same unresolved question as the CLI phase.
+
 ---
 
 ## Phase 6 — Teardown
@@ -276,6 +357,19 @@ DROP TABLE IF EXISTS workspace.semantic.zip_hotspots_metrics_snapshot
 ```
 
 Also remove the job task added in Phase 2.
+
+**In the Databricks UI instead:**
+1. Lakebase project page → **Synced Tables** tab → find
+   `zip_hotspots_metrics` → delete.
+2. Same project page → **Settings** → **Delete project**.
+3. **Catalog** → `workspace` → `semantic` →
+   `zip_hotspots_metrics_snapshot` → **⋮** menu → **Delete**.
+4. **Workflows** → **RDU Medallion Pipeline** → **Tasks** tab → select
+   `52_semantic_zip_hotspots_snapshot` → remove it, or remove the task
+   from `resources/medallion_pipeline_job.yml` and `databricks bundle
+   deploy` again — the bundle is the source of truth for this job, so a
+   UI-only removal will be overwritten by the next deploy unless the YAML
+   is updated too.
 
 ---
 
