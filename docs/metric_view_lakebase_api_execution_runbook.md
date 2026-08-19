@@ -261,29 +261,59 @@ SET TBLPROPERTIES (delta.enableChangeDataFeed = true)
 
 **② Databricks CLI** (`postgres` command group — this one manages Lakebase
 infrastructure via the Databricks control plane, not a direct Postgres SQL
-connection, so it's unambiguous which system it targets):
+connection, so it's unambiguous which system it targets). **This exact
+command is confirmed working** — verified live against `rdu-metrics-api`,
+reaching `SYNCED_TABLE_ONLINE_NO_PENDING_UPDATE` in about 7 seconds:
 
 ```bash
 databricks postgres create-synced-table \
   workspace.semantic.zip_hotspots_metrics \
   --json '{
     "spec": {
+      "branch": "projects/rdu-metrics-api/branches/production",
+      "postgres_database": "databricks_postgres",
       "source_table_full_name": "workspace.semantic.zip_hotspots_metrics_snapshot",
-      "target_endpoint": "projects/rdu-metrics-api/branches/<BRANCH_ID>/endpoints/<ENDPOINT_ID>",
-      "primary_key_columns": ["zip"]
+      "primary_key_columns": ["zip"],
+      "scheduling_policy": "TRIGGERED"
     }
   }' \
-  --profile DEFAULT
+  -p DEFAULT
 ```
 
-**[verify]** the exact `spec` field names above before running for real —
-`create-synced-table -h` confirms the command and its positional
-`SYNCED_TABLE_ID` (`{catalog}.{schema}.{table}` — this becomes both a UC
-entity and the Postgres table name), but did not enumerate the full
-`--json` spec schema in this session. If the fields above are rejected,
-check `databricks api get /api/2.0/... ` schema docs or the Databricks
-REST API reference for the exact `SyncedTableSpec` shape rather than
-guessing further field names.
+**How this schema was actually resolved**, since it took several wrong
+guesses to get here and the path matters for the next Beta API this
+happens with: the `--json` payload is the `SyncedTable` object directly
+(`spec` at the top level, no extra wrapper) — the resource name/ID goes in
+the positional argument, not the JSON body. `spec.branch` needs the
+**full** resource path (`projects/{id}/branches/{branch_id}`, not just
+`production`) or the API rejects it with "expects
+'projects/{project_id}/branches/{branch_id}' format". `spec.postgres_database`
+is the plain Postgres database name (`databricks_postgres`), not a
+resource path. None of this was guessable from the CLI's own `-h` output
+or from official docs pages this session could actually fetch (several
+returned only a title, JS-rendered) — what actually resolved it was
+installing `databricks-sdk` locally (`pip install databricks-sdk`) and
+introspecting the real dataclass:
+```python
+from databricks.sdk.service import postgres
+import dataclasses, inspect
+[f.name for f in dataclasses.fields(postgres.SyncedTableSyncedTableSpec)]
+inspect.signature(postgres.PostgresAPI.create_synced_table)
+```
+That's the reliable fallback for any Beta Lakebase API command whose
+`--json` schema isn't otherwise discoverable — don't keep guessing against
+the live API once a couple of attempts fail; introspect the SDK instead.
+
+Check status:
+```bash
+databricks postgres get-synced-table synced_tables/workspace.semantic.zip_hotspots_metrics -p DEFAULT
+```
+Target state: `SYNCED_TABLE_ONLINE_NO_PENDING_UPDATE` (Triggered mode's
+"synced and idle" state). Failure states to watch for:
+`SYNCED_TABLE_OFFLINE_FAILED`, `SYNCED_TABLE_ONLINE_PIPELINE_FAILED`.
+
+No `[verify]` flag needed here anymore — the schema above is confirmed
+working, not guessed (see "how this schema was actually resolved" above).
 
 **Sync mode: Triggered**, not Continuous (wrong given weekly source
 cadence — burns quota keeping near-real-time freshness nothing needs) or
@@ -291,8 +321,10 @@ Snapshot (simpler, but this session didn't confirm a clean resync command
 for it). Run this sync step as the job task immediately after Phase 1/2's
 snapshot task — don't give it an independent schedule.
 
-**Checkpoint:** row count in the Postgres-side synced table matches the
-Delta source table's row count (query both and compare).
+**Checkpoint:** `get-synced-table` reports `detailed_state:
+SYNCED_TABLE_ONLINE_NO_PENDING_UPDATE` — confirmed live, sync completed in
+~7 seconds. Cross-checking the actual row count between the Delta source
+and the Postgres-side table happens naturally in Phase 5's GET test.
 
 **UI path not available on this account — use the CLI for this step,
 full stop.** Three things were tried and none held up: (1) the official
