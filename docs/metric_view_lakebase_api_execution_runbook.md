@@ -294,17 +294,25 @@ snapshot task — don't give it an independent schedule.
 **Checkpoint:** row count in the Postgres-side synced table matches the
 Delta source table's row count (query both and compare).
 
-**UI path unconfirmed on this account — default to the CLI for this step.**
-The steps below are what the official docs
-(docs.databricks.com/aws/en/oltp/projects/reverse-etl) describe, but they
-didn't match what was actually visible in Catalog on this workspace when
-tested directly — the second UI guess in this phase to not hold up. The
-official Free Edition limitations page doesn't mention synced tables or
-this wizard either way, so this isn't confirmed as a Free Edition gap —
-it's genuinely unresolved. Rather than guess a third time, **use the CLI
-command in the block above** (`databricks postgres create-synced-table`)
-— it's confirmed to exist on this account and is the same tool that
-already worked for project creation and endpoint resizing.
+**UI path not available on this account — use the CLI for this step,
+full stop.** Three things were tried and none held up: (1) the official
+docs' Catalog Explorer steps
+(docs.databricks.com/aws/en/oltp/projects/reverse-etl) didn't match what
+was actually visible on this workspace; (2) the Free Edition limitations
+page doesn't mention synced tables either way; (3) the "Previews" menu
+this kind of Beta feature is normally gated behind
+(username → Previews, per docs.databricks.com/aws/en/admin/workspace-settings/manage-previews)
+**doesn't even appear** in this account's UI. That third result is the
+most telling — it points to a genuine Free Edition UI gap (the CLI/API
+shipped, the UI wizard hasn't, and there's no toggle to find because
+there's nothing to toggle), consistent with the same CLI-works/UI-doesn't
+asymmetry seen elsewhere on this tier (catalog creation was the reverse
+case — UI-only, CLI failed).
+
+**Use the CLI command in the block above**
+(`databricks postgres create-synced-table`) — confirmed to exist on this
+account and the same tool that already worked for project creation and
+endpoint resizing.
 
 Documented UI steps, kept for reference in case they match a different
 workspace version:
