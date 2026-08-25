@@ -1,6 +1,6 @@
 # Medallion Pipeline Execution Runbook
 
-How to run all 32 notebooks across bronze, silver, and gold in the correct
+How to run all 33 notebooks across bronze, silver, and gold in the correct
 order, using the Databricks CLI. Implements the ordering statement in
 `docs/ingestion_architecture.md` ("A Databricks Workflow runs the bronze
 notebooks, then silver, then gold") with actual commands — that doc
@@ -71,7 +71,7 @@ order within the tier, but the whole tier must finish before gold starts:**
 30_silver_data_quality_log   32_silver_rent_index
 ```
 
-**Gold (7 notebooks) — real dependency chain, confirmed by grepping which
+**Gold (8 notebooks) — real dependency chain, confirmed by grepping which
 gold tables each notebook reads. Run in this exact order:**
 
 ```
@@ -82,10 +82,13 @@ gold tables each notebook reads. Run in this exact order:**
 44_gold_supply_demand_signals     (needs 40)
 45_gold_assessor_vs_market        (independent)
 46_gold_zip_hotspots              (independent)
+47_gold_metric_views              (needs 46 — creates UC metric views over
+                                    county_market_monthly, affordability_monthly,
+                                    market_health_score, supply_demand_signals)
 ```
 
 The numeric filenames already encode this correctly — running 40 through
-46 in order satisfies every dependency.
+47 in order satisfies every dependency.
 
 ---
 
@@ -124,7 +127,7 @@ done
 for nb in 40_gold_county_market_monthly 41_gold_affordability_monthly \
           42_gold_rent_vs_buy 43_gold_market_health_score \
           44_gold_supply_demand_signals 45_gold_assessor_vs_market \
-          46_gold_zip_hotspots; do
+          46_gold_zip_hotspots 47_gold_metric_views; do
   run_notebook "$nb"
 done
 ```
@@ -141,11 +144,13 @@ obviously.
 
 Running this by hand every time was exactly the case for a proper
 orchestration Job — that's now built: `resources/medallion_pipeline_job.yml`,
-deployed via `databricks bundle deploy`. It's 33 tasks total: a
-`pipeline_task` that triggers `events_medallion` first (a scheduling
-dependency, not a data one today — see the job file's comments), then all
-13 bronze tasks in parallel, 12 silver tasks each gated on every bronze
-task, and the 7 gold tasks in the exact dependency chain confirmed above.
-Trigger it with `databricks jobs run-now <job_id>` instead of the manual
-loops in this doc. This runbook stays as the reference for what each task
-actually does and as a fallback for running a subset by hand.
+deployed via `databricks bundle deploy`. It's 35 tasks total, fully
+sequential: a `pipeline_task` that triggers `events_medallion` first (a
+scheduling dependency, not a data one today — see the job file's
+comments), then all 13 bronze tasks, 12 silver tasks, the 8 gold tasks
+(including `47_gold_metric_views`) in the exact dependency chain
+confirmed above, and finally `52_semantic_zip_hotspots_snapshot` — each
+task depends on exactly the one before it. Trigger it with `databricks
+jobs run-now <job_id>` instead of the manual loops in this doc. This
+runbook stays as the reference for what each task actually does and as a
+fallback for running a subset by hand.

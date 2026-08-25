@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>RDU Metrics Portal</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --muted: #666666;
+    --border: #dddddd;
+    --accent: #2563eb;
+    --row-alt: #f7f7f9;
+    --card: #fafafa;
+    --good: #1a7f37;
+    --bad: #cf222e;
+    --sidebar-bg: #f7f7f9;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d;
+      --fg: #e8e8e8;
+      --muted: #9aa0a6;
+      --border: #333844;
+      --accent: #6ea8fe;
+      --row-alt: #1e2128;
+      --card: #1c1f26;
+      --good: #3fb950;
+      --bad: #f85149;
+      --sidebar-bg: #101216;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+  }
+
+  .app-shell { display: flex; min-height: 100vh; }
+
+  .sidebar {
+    width: 210px;
+    flex-shrink: 0;
+    background: var(--sidebar-bg);
+    border-right: 1px solid var(--border);
+    padding: 20px 0;
+  }
+  .sidebar h1 { font-size: 1.05rem; margin: 0 20px 4px; }
+  .sidebar .tagline { font-size: 0.72rem; color: var(--muted); margin: 0 20px 20px; line-height: 1.4; }
+  .nav-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 10px 20px;
+    font-size: 0.88rem;
+    border: none;
+    background: none;
+    color: var(--fg);
+    cursor: pointer;
+    border-left: 3px solid transparent;
+  }
+  .nav-item:hover { background: var(--row-alt); }
+  .nav-item.active {
+    border-left-color: var(--accent);
+    background: var(--row-alt);
+    font-weight: 600;
+    color: var(--accent);
+  }
+
+  .main { flex: 1; padding: 28px 32px; overflow-y: auto; min-width: 0; }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  h2 { font-size: 1.15rem; margin: 0 0 4px; }
+  p.subtitle { color: var(--muted); margin: 0 0 20px; font-size: 0.9rem; }
+  .controls { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  select, button {
+    font-size: 0.9rem;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+  }
+  button { cursor: pointer; background: var(--accent); color: white; border: none; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  label.inline { font-size: 0.85rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+
+  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px; }
+  @media (max-width: 900px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+  .kpi-card {
+    border: 1px solid var(--border); border-radius: 10px; background: var(--card);
+    padding: 14px 16px;
+  }
+  .kpi-label { font-size: 0.78rem; color: var(--muted); margin-bottom: 6px; }
+  .kpi-value { font-size: 1.5rem; font-weight: 600; }
+  .kpi-delta { font-size: 0.8rem; margin-top: 4px; }
+  .kpi-delta.up { color: var(--good); }
+  .kpi-delta.down { color: var(--bad); }
+  .kpi-asof { font-size: 0.7rem; color: var(--muted); margin-top: 6px; }
+
+  .chart-panel {
+    border: 1px solid var(--border); border-radius: 10px; background: var(--card);
+    padding: 16px;
+  }
+  .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; font-size: 0.75rem; color: var(--muted); }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+
+  .columns { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 800px) { .columns { grid-template-columns: 1fr; } }
+  .panel { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .panel-header {
+    padding: 10px 14px;
+    background: var(--row-alt);
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    font-size: 0.9rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .panel-body { overflow-x: auto; max-height: 480px; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.82rem; }
+  th, td {
+    padding: 6px 10px;
+    text-align: left;
+    white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+  }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { color: var(--accent); }
+  tbody tr:nth-child(even) { background: var(--row-alt); }
+  .status { padding: 14px; color: var(--muted); font-size: 0.85rem; }
+  .status.error { color: var(--bad); }
+  code { font-size: 0.8rem; color: var(--muted); }
+
+  @media (max-width: 700px) {
+    .app-shell { flex-direction: column; }
+    .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); padding: 12px 0; }
+    .sidebar h1, .sidebar .tagline { margin-left: 16px; margin-right: 16px; }
+    .nav-item { display: inline-block; width: auto; padding: 8px 14px; border-left: none; border-bottom: 3px solid transparent; }
+    .nav-item.active { border-left-color: transparent; border-bottom-color: var(--accent); }
+    .main { padding: 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <nav class="sidebar">
+    <h1>RDU Metrics</h1>
+    <p class="tagline">Analytics over Lakebase-synced gold metrics</p>
+    <button class="nav-item active" data-view="overview">Overview</button>
+    <button class="nav-item" data-view="trend">Trend</button>
+    <button class="nav-item" data-view="comparison">County Comparison</button>
+    <button class="nav-item" data-view="zip">ZIP Hotspots</button>
+    <button class="nav-item" data-view="api">API Comparison</button>
+  </nav>
+
+  <main class="main">
+
+    <div class="view active" data-view="overview">
+      <h2>Overview</h2>
+      <p class="subtitle">Latest snapshot and market health breakdown for one county.</p>
+      <div class="controls">
+        <label class="inline">County
+          <select id="countySelect" disabled><option>Loading…</option></select>
+        </label>
+      </div>
+
+      <div class="kpi-row" id="kpiRow">
+        <div class="kpi-card"><div class="kpi-label">Median Sale Price</div><div class="status">Loading…</div></div>
+        <div class="kpi-card"><div class="kpi-label">Market Health Score</div><div class="status">Loading…</div></div>
+        <div class="kpi-card"><div class="kpi-label">Affordability Index</div><div class="status">Loading…</div></div>
+        <div class="kpi-card"><div class="kpi-label">Months of Supply</div><div class="status">Loading…</div></div>
+      </div>
+
+      <h2>Market Health Breakdown</h2>
+      <p class="subtitle" style="margin-bottom:8px;">Sub-scores behind the composite score above.</p>
+      <div class="chart-panel">
+        <svg id="healthChart" viewBox="0 0 700 260" width="100%" height="260"></svg>
+      </div>
+    </div>
+
+    <div class="view" data-view="trend">
+      <h2>Trend</h2>
+      <p class="subtitle">One line per county, over a selectable time window.</p>
+      <div class="controls">
+        <label class="inline">Metric
+          <select id="trendMetric">
+            <option value="median_sale_price">Median Sale Price</option>
+            <option value="price_yoy_pct">Price YoY %</option>
+            <option value="months_of_supply">Months of Supply</option>
+            <option value="affordability_index">Affordability Index</option>
+            <option value="market_health_score" selected>Market Health Score</option>
+          </select>
+        </label>
+        <label class="inline">Window
+          <select id="trendMonths">
+            <option value="12">12 months</option>
+            <option value="36">3 years</option>
+            <option value="60" selected>5 years</option>
+            <option value="120">10 years</option>
+          </select>
+        </label>
+      </div>
+      <div class="chart-panel">
+        <svg id="trendChart" viewBox="0 0 900 320" width="100%" height="320"></svg>
+        <div class="legend" id="trendLegend"></div>
+      </div>
+    </div>
+
+    <div class="view" data-view="comparison">
+      <h2>County Comparison</h2>
+      <p class="subtitle">All 8 counties ranked by the latest available value.</p>
+      <div class="controls">
+        <label class="inline">Metric
+          <select id="compareMetric">
+            <option value="median_sale_price" selected>Median Sale Price</option>
+            <option value="market_health_score">Market Health Score</option>
+            <option value="affordability_index">Affordability Index</option>
+            <option value="months_of_supply">Months of Supply</option>
+          </select>
+        </label>
+      </div>
+      <div class="chart-panel">
+        <svg id="compareChart" viewBox="0 0 700 320" width="100%" height="320"></svg>
+      </div>
+    </div>
+
+    <div class="view" data-view="zip">
+      <h2>ZIP Hotspots</h2>
+      <p class="subtitle">Click a column header to sort.</p>
+      <div class="panel">
+        <div class="panel-body" id="zipTableBody">
+          <div class="status">Loading…</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="view" data-view="api">
+      <h2>API Design Comparison</h2>
+      <p class="subtitle">
+        Same underlying data, two endpoint styles. Left calls this app's own
+        generic <code>/api/metrics/{view}</code> route; right server-side
+        proxies to <code>metrics-api-dedicated</code>'s hand-written route.
+      </p>
+      <div class="controls">
+        <select id="metricSelect" disabled>
+          <option>Loading metrics…</option>
+        </select>
+        <button id="refreshBtn" disabled>Refresh</button>
+      </div>
+      <div class="columns">
+        <div class="panel">
+          <div class="panel-header">
+            <span>Generic API</span>
+            <code id="genericPath">/api/metrics/…</code>
+          </div>
+          <div class="panel-body" id="genericBody">
+            <div class="status">Select a metric to load data.</div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-header">
+            <span>Dedicated API (proxied)</span>
+            <code id="dedicatedPath">/api/proxy/dedicated/…</code>
+          </div>
+          <div class="panel-body" id="dedicatedBody">
+            <div class="status">Select a metric to load data.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+const PALETTE = ["#2563eb", "#e8590c", "#2f9e44", "#e03131", "#9c36b5", "#0c8599", "#f08c00", "#495057"];
+const fmt = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+const fmtMoney = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+function svgEl(tag, attrs) {
+  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+
+// ---------- Sidebar navigation ----------
+document.querySelectorAll(".nav-item").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".nav-item").forEach(b => b.classList.remove("active"));
+    document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
+    btn.classList.add("active");
+    document.querySelector(`.view[data-view="${btn.dataset.view}"]`).classList.add("active");
+  });
+});
+
+// ---------- KPI tiles ----------
+function deltaHtml(delta, higherIsBetter = true) {
+  if (delta === null || delta === undefined) return "";
+  const good = higherIsBetter ? delta >= 0 : delta <= 0;
+  const arrow = delta >= 0 ? "▲" : "▼";
+  return `<div class="kpi-delta ${good ? "up" : "down"}">${arrow} ${fmt.format(Math.abs(delta))} vs prior period</div>`;
+}
+
+async function loadKpis(countyFips) {
+  const kpiRow = document.getElementById("kpiRow");
+  try {
+    const resp = await fetch(`/api/analytics/kpi?county_fips=${countyFips}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const d = await resp.json();
+
+    const price = d.median_sale_price;
+    const health = d.market_health;
+    const afford = d.affordability_index;
+    const supply = d.months_of_supply;
+
+    kpiRow.innerHTML = `
+      <div class="kpi-card">
+        <div class="kpi-label">Median Sale Price</div>
+        <div class="kpi-value">${price?.avg_median_sale_price != null ? fmtMoney.format(price.avg_median_sale_price) : "—"}</div>
+        ${price?.avg_price_yoy != null ? `<div class="kpi-delta ${price.avg_price_yoy >= 0 ? "up" : "down"}">${price.avg_price_yoy >= 0 ? "▲" : "▼"} ${fmt.format(Math.abs(price.avg_price_yoy))}% YoY</div>` : ""}
+        <div class="kpi-asof">as of ${price?.date_key ?? "—"}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Market Health Score</div>
+        <div class="kpi-value">${health?.avg_market_health_score != null ? fmt.format(health.avg_market_health_score) : "—"}</div>
+        ${deltaHtml(health?.delta, true)}
+        <div class="kpi-asof">as of ${health?.date_key ?? "—"}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Affordability Index</div>
+        <div class="kpi-value">${afford?.avg_affordability_index != null ? fmt.format(afford.avg_affordability_index) : "—"}</div>
+        ${deltaHtml(afford?.delta, true)}
+        <div class="kpi-asof">as of ${afford?.date_key ?? "—"}</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-label">Months of Supply</div>
+        <div class="kpi-value">${supply?.avg_months_of_supply != null ? fmt.format(supply.avg_months_of_supply) : "—"}</div>
+        ${deltaHtml(supply?.delta, false)}
+        <div class="kpi-asof">as of ${supply?.date_key ?? "—"}</div>
+      </div>
+    `;
+  } catch (err) {
+    kpiRow.innerHTML = `<div class="status error">Error loading KPIs: ${err.message}</div>`;
+  }
+}
+
+// ---------- Trend line chart ----------
+async function loadTrend() {
+  const metric = document.getElementById("trendMetric").value;
+  const months = document.getElementById("trendMonths").value;
+  const svg = document.getElementById("trendChart");
+  const legend = document.getElementById("trendLegend");
+  svg.innerHTML = "";
+  legend.innerHTML = "";
+
+  try {
+    const resp = await fetch(`/api/analytics/trend?metric=${metric}&months=${months}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const rows = await resp.json();
+    if (rows.length === 0) { svg.innerHTML = ""; return; }
+
+    const byCounty = {};
+    for (const r of rows) {
+      (byCounty[r.county_name] ??= []).push(r);
+    }
+    const counties = Object.keys(byCounty).sort();
+    const allDates = [...new Set(rows.map(r => r.date_key))].sort();
+    const values = rows.map(r => r.value).filter(v => v !== null);
+    if (values.length === 0) { svg.innerHTML = '<text x="10" y="20" fill="var(--muted)">No data.</text>'; return; }
+
+    const W = 900, H = 320, padL = 60, padR = 10, padT = 10, padB = 30;
+    const minV = Math.min(...values), maxV = Math.max(...values);
+    const vRange = (maxV - minV) || 1;
+    const x = i => padL + (i / Math.max(allDates.length - 1, 1)) * (W - padL - padR);
+    const y = v => H - padB - ((v - minV) / vRange) * (H - padT - padB);
+
+    svg.appendChild(svgEl("line", { x1: padL, y1: H - padB, x2: W - padR, y2: H - padB, stroke: "var(--border)" }));
+    svg.appendChild(svgEl("line", { x1: padL, y1: padT, x2: padL, y2: H - padB, stroke: "var(--border)" }));
+    [minV, (minV + maxV) / 2, maxV].forEach(v => {
+      const ty = y(v);
+      const t = svgEl("text", { x: padL - 8, y: ty + 4, fill: "var(--muted)", "font-size": "11", "text-anchor": "end" });
+      t.textContent = fmt.format(v);
+      svg.appendChild(t);
+    });
+    [0, allDates.length - 1].forEach(i => {
+      const t = svgEl("text", { x: x(i), y: H - padB + 18, fill: "var(--muted)", "font-size": "11", "text-anchor": "middle" });
+      t.textContent = allDates[i];
+      svg.appendChild(t);
+    });
+
+    counties.forEach((county, ci) => {
+      const color = PALETTE[ci % PALETTE.length];
+      const seriesRows = byCounty[county];
+      const dateToVal = Object.fromEntries(seriesRows.map(r => [r.date_key, r.value]));
+      const pts = allDates
+        .map((d, i) => (dateToVal[d] != null ? [x(i), y(dateToVal[d])] : null))
+        .filter(p => p !== null);
+      if (pts.length === 0) return;
+      const path = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
+      svg.appendChild(svgEl("path", { d: path, fill: "none", stroke: color, "stroke-width": "2" }));
+
+      const li = document.createElement("div");
+      li.className = "legend-item";
+      li.innerHTML = `<span class="swatch" style="background:${color}"></span>${county}`;
+      legend.appendChild(li);
+    });
+  } catch (err) {
+    svg.innerHTML = `<text x="10" y="20" fill="var(--bad)">Error: ${err.message}</text>`;
+  }
+}
+
+// ---------- County comparison bar chart ----------
+async function loadCompare() {
+  const metric = document.getElementById("compareMetric").value;
+  const svg = document.getElementById("compareChart");
+  svg.innerHTML = "";
+  try {
+    const resp = await fetch(`/api/analytics/compare?metric=${metric}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const rows = (await resp.json()).filter(r => r.value !== null);
+    if (rows.length === 0) { svg.innerHTML = '<text x="10" y="20" fill="var(--muted)">No data.</text>'; return; }
+
+    const W = 700, H = 320, padL = 100, padR = 70, padT = 10, rowH = H / rows.length;
+    const maxV = Math.max(...rows.map(r => r.value));
+    rows.forEach((r, i) => {
+      const barW = (r.value / maxV) * (W - padL - padR);
+      const yTop = padT + i * rowH + rowH * 0.15;
+      const barH = rowH * 0.6;
+      svg.appendChild(svgEl("rect", { x: padL, y: yTop, width: Math.max(barW, 1), height: barH, fill: PALETTE[i % PALETTE.length], rx: 3 }));
+      const label = svgEl("text", { x: padL - 8, y: yTop + barH / 2 + 4, fill: "var(--fg)", "font-size": "12", "text-anchor": "end" });
+      label.textContent = r.county_name;
+      svg.appendChild(label);
+      const valLabel = svgEl("text", { x: padL + barW + 6, y: yTop + barH / 2 + 4, fill: "var(--muted)", "font-size": "11" });
+      valLabel.textContent = fmt.format(r.value);
+      svg.appendChild(valLabel);
+    });
+  } catch (err) {
+    svg.innerHTML = `<text x="10" y="20" fill="var(--bad)">Error: ${err.message}</text>`;
+  }
+}
+
+// ---------- Market health breakdown ----------
+async function loadHealthBreakdown(countyFips) {
+  const svg = document.getElementById("healthChart");
+  svg.innerHTML = "";
+  try {
+    const resp = await fetch(`/api/analytics/kpi?county_fips=${countyFips}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const d = await resp.json();
+    const mh = d.market_health;
+    if (!mh) { svg.innerHTML = '<text x="10" y="20" fill="var(--muted)">No data.</text>'; return; }
+
+    const subScores = [
+      ["Days on Market", mh.avg_dom_score],
+      ["Sale-to-List", mh.avg_sale_to_list_score],
+      ["Supply", mh.avg_supply_score],
+      ["Momentum", mh.avg_momentum_score],
+      ["Affordability", mh.avg_affordability_score],
+    ].filter(([, v]) => v !== null);
+
+    const W = 700, H = 260, padL = 130, padR = 50, padT = 10, rowH = H / subScores.length;
+    subScores.forEach(([label, val], i) => {
+      const barW = (val / 100) * (W - padL - padR);
+      const yTop = padT + i * rowH + rowH * 0.2;
+      const barH = rowH * 0.55;
+      const color = val >= 60 ? "var(--good)" : (val >= 30 ? "#f08c00" : "var(--bad)");
+      svg.appendChild(svgEl("rect", { x: padL, y: yTop, width: Math.max(barW, 1), height: barH, fill: color, rx: 3 }));
+      const lbl = svgEl("text", { x: padL - 8, y: yTop + barH / 2 + 4, fill: "var(--fg)", "font-size": "12", "text-anchor": "end" });
+      lbl.textContent = label;
+      svg.appendChild(lbl);
+      const valLbl = svgEl("text", { x: padL + barW + 6, y: yTop + barH / 2 + 4, fill: "var(--muted)", "font-size": "11" });
+      valLbl.textContent = fmt.format(val);
+      svg.appendChild(valLbl);
+    });
+  } catch (err) {
+    svg.innerHTML = `<text x="10" y="20" fill="var(--bad)">Error: ${err.message}</text>`;
+  }
+}
+
+// ---------- ZIP hotspots table ----------
+let zipRows = [];
+let zipSort = { col: "price_reduction_rate", dir: "desc" };
+
+function renderZipTable() {
+  const container = document.getElementById("zipTableBody");
+  if (zipRows.length === 0) { container.innerHTML = '<div class="status">No rows.</div>'; return; }
+  const cols = ["zip", "zip_name", "avg_days_on_market", "total_active_listings", "price_reduction_rate"];
+  const sorted = [...zipRows].sort((a, b) => {
+    const av = a[zipSort.col], bv = b[zipSort.col];
+    if (av === null) return 1;
+    if (bv === null) return -1;
+    return zipSort.dir === "asc" ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+  });
+  const thead = "<thead><tr>" + cols.map(c =>
+    `<th class="sortable" data-col="${c}">${c}${zipSort.col === c ? (zipSort.dir === "asc" ? " ▲" : " ▼") : ""}</th>`
+  ).join("") + "</tr></thead>";
+  const tbody = "<tbody>" + sorted.slice(0, 30).map(r =>
+    "<tr>" + cols.map(c => `<td>${r[c] === null ? "—" : r[c]}</td>`).join("") + "</tr>"
+  ).join("") + "</tbody>";
+  container.innerHTML = `<table>${thead}${tbody}</table>`;
+  container.querySelectorAll("th.sortable").forEach(th => {
+    th.addEventListener("click", () => {
+      const col = th.dataset.col;
+      zipSort = { col, dir: zipSort.col === col && zipSort.dir === "desc" ? "asc" : "desc" };
+      renderZipTable();
+    });
+  });
+}
+
+async function loadZipHotspots() {
+  const container = document.getElementById("zipTableBody");
+  container.innerHTML = '<div class="status">Loading…</div>';
+  try {
+    const resp = await fetch("/api/metrics/zip-hotspots?limit=500");
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    zipRows = await resp.json();
+    renderZipTable();
+  } catch (err) {
+    container.innerHTML = `<div class="status error">Error: ${err.message}</div>`;
+  }
+}
+
+// ---------- County selector wiring ----------
+async function loadCounties() {
+  const sel = document.getElementById("countySelect");
+  try {
+    const resp = await fetch("/api/analytics/counties");
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const counties = await resp.json();
+    sel.innerHTML = counties.map(c => `<option value="${c.county_fips}">${c.county_name}</option>`).join("");
+    sel.disabled = false;
+    const wake = counties.find(c => c.county_name === "Wake");
+    sel.value = wake ? wake.county_fips : counties[0].county_fips;
+    onCountyChange();
+  } catch (err) {
+    sel.innerHTML = "<option>Failed to load</option>";
+  }
+}
+
+function onCountyChange() {
+  const countyFips = document.getElementById("countySelect").value;
+  loadKpis(countyFips);
+  loadHealthBreakdown(countyFips);
+}
+
+document.getElementById("countySelect").addEventListener("change", onCountyChange);
+document.getElementById("trendMetric").addEventListener("change", loadTrend);
+document.getElementById("trendMonths").addEventListener("change", loadTrend);
+document.getElementById("compareMetric").addEventListener("change", loadCompare);
+
+loadCounties();
+loadTrend();
+loadCompare();
+loadZipHotspots();
+
+// ---------- API design comparison (existing) ----------
+const metricSelect = document.getElementById("metricSelect");
+const refreshBtn = document.getElementById("refreshBtn");
+const genericBody = document.getElementById("genericBody");
+const dedicatedBody = document.getElementById("dedicatedBody");
+const genericPath = document.getElementById("genericPath");
+const dedicatedPath = document.getElementById("dedicatedPath");
+
+function renderTable(container, rows) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    container.innerHTML = '<div class="status">No rows returned.</div>';
+    return;
+  }
+  const cols = Object.keys(rows[0]);
+  const thead = "<thead><tr>" + cols.map(c => `<th>${c}</th>`).join("") + "</tr></thead>";
+  const tbody = "<tbody>" + rows.map(r =>
+    "<tr>" + cols.map(c => `<td>${r[c] === null || r[c] === undefined ? "—" : r[c]}</td>`).join("") + "</tr>"
+  ).join("") + "</tbody>";
+  container.innerHTML = `<table>${thead}${tbody}</table>`;
+}
+
+function renderError(container, err) {
+  container.innerHTML = `<div class="status error">Error: ${err}</div>`;
+}
+
+async function loadMetrics() {
+  try {
+    const resp = await fetch("/api/metrics");
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const metrics = await resp.json();
+    metricSelect.innerHTML = metrics.map(m =>
+      `<option value="${m.short_name}">${m.short_name}</option>`
+    ).join("");
+    metricSelect.disabled = false;
+    refreshBtn.disabled = false;
+    if (metrics.length > 0) loadApiData(metrics[0].short_name);
+  } catch (err) {
+    metricSelect.innerHTML = "<option>Failed to load</option>";
+    renderError(genericBody, err.message);
+    renderError(dedicatedBody, err.message);
+  }
+}
+
+async function loadApiData(viewName) {
+  genericPath.textContent = `/api/metrics/${viewName}`;
+  dedicatedPath.textContent = `/api/proxy/dedicated/${viewName}`;
+  genericBody.innerHTML = '<div class="status">Loading…</div>';
+  dedicatedBody.innerHTML = '<div class="status">Loading…</div>';
+
+  const genericReq = fetch(`/api/metrics/${viewName}?limit=25`)
+    .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+    .then(rows => renderTable(genericBody, rows))
+    .catch(err => renderError(genericBody, err.message));
+
+  const dedicatedReq = fetch(`/api/proxy/dedicated/${viewName}?limit=25`)
+    .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+    .then(rows => renderTable(dedicatedBody, rows))
+    .catch(err => renderError(dedicatedBody, err.message));
+
+  await Promise.all([genericReq, dedicatedReq]);
+}
+
+metricSelect.addEventListener("change", () => loadApiData(metricSelect.value));
+refreshBtn.addEventListener("click", () => loadApiData(metricSelect.value));
+
+loadMetrics();
+</script>
+</body>
+</html>

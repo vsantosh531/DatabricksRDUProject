@@ -181,9 +181,15 @@ resources:
           notebook_task:
             notebook_path: ../notebooks/46_gold_zip_hotspots.py
 
+        - task_key: 47_gold_metric_views
+          depends_on:
+            - task_key: 46_gold_zip_hotspots
+          notebook_task:
+            notebook_path: ../notebooks/47_gold_metric_views.py
+
         # ---- Semantic snapshot (last) ----
         - task_key: 52_semantic_zip_hotspots_snapshot
           depends_on:
-            - task_key: 46_gold_zip_hotspots
+            - task_key: 47_gold_metric_views
           notebook_task:
             notebook_path: ../notebooks/52_semantic_zip_hotspots_snapshot.py

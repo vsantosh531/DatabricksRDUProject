@@ -16,3 +16,5 @@ __pycache__/
 
 # Acquisition staging — fetched files, never committed
 acquisition/staging/
+
+.databricks
